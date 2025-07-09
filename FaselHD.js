@@ -34,37 +34,28 @@ async function searchResults(keyword) {
 }
 
 async function extractDetails(url) {
-    const response = await soraFetch(url);
+    const response = await fetchv2(url);
     const html = await response.text();
 
-    const descriptionMatch = html.match(/<div class="story">\s*<p>(.*?)<\/p>/s);
-    const description = descriptionMatch ? descriptionMatch[1].trim() : 'N/A';
+    const title = (html.match(/<h1[^>]*>(.*?)<\/h1>/) || ["", ""])[1].trim();
 
-    const airdateMatch = html.match(/<span>\s*موعد الصدور\s*:<\/span>\s*<a[^>]*>(\d{4})<\/a>/);
-    const airdate = airdateMatch ? airdateMatch[1] : 'N/A';
+    const description = (html.match(/<div class="StoryArea">\s*<p>(.*?)<\/p>/) || ["", ""])[1]
+        .replace(/^القصة\s*:\s*/i, "")
+        .trim();
 
-    const aliasMatches = [];
-    const aliasSectionMatch = html.match(/<ul class="RightTaxContent">([\s\S]*?)<\/ul>/);
-    if (aliasSectionMatch) {
-        const section = aliasSectionMatch[1];
-        const items = [...section.matchAll(/<li[^>]*>[\s\S]*?<span>(.*?)<\/span>([\s\S]*?)<\/li>/g)];
-        for (const [, label, content] of items) {
-            if (label.includes("موعد الصدور")) continue;
+    const year = (html.match(/تاريخ الاصدار[^<]*<[^>]*>(\d{4})<\/a>/i) || ["", ""])[1];
 
-            const values = [...content.matchAll(/<a[^>]*>(.*?)<\/a>/g)].map(m => m[1].trim());
-            if (values.length === 0) {
-                const strongValue = content.match(/<strong>(.*?)<\/strong>/);
-                if (strongValue) values.push(strongValue[1].trim());
-            }
-            aliasMatches.push(`${label.trim()} ${values.join(', ')}`);
-        }
-    }
+    const poster = (html.match(/<img[^>]+src="([^"]+)"[^>]*class="imgLoaded"/) || ["", ""])[1];
 
-    return JSON.stringify([{
+    const genres = [...html.matchAll(/نوع المسلسل\s*:[\s\S]*?<a[^>]*>(.*?)<\/a>/g)].map(m => m[1].trim());
+
+    return {
+        title,
         description,
-        aliases: aliasMatches.join('\n'),
-        airdate
-    }]);
+        year,
+        poster,
+        genres
+    };
 }
 
 async function extractEpisodes(html, url = "") {
