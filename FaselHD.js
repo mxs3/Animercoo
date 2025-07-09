@@ -37,24 +37,55 @@ async function extractDetails(url) {
     const response = await fetchv2(url);
     const html = await response.text();
 
-    const title = (html.match(/<h1[^>]*>(.*?)<\/h1>/) || ["", ""])[1].trim();
+    const title = (html.match(/<h1[^>]*class="Title"[^>]*>(.*?)<\/h1>/i) || [null, null])[1]?.trim() || 'N/A';
 
-    const description = (html.match(/<div class="StoryArea">\s*<p>(.*?)<\/p>/) || ["", ""])[1]
-        .replace(/^القصة\s*:\s*/i, "")
-        .trim();
+    const description = (html.match(/<div class="StoryArea">\s*<p>(.*?)<\/p>/i) || [null, null])[1]
+        ?.replace(/^(?:القصة|القصه)\s*[:：]?\s*/i, "")
+        ?.trim() || 'N/A';
 
-    const year = (html.match(/تاريخ الاصدار[^<]*<[^>]*>(\d{4})<\/a>/i) || ["", ""])[1];
+    const year = (html.match(/تاريخ (?:الاصدار|الإصدار)[^<]*?<a[^>]*>(\d{4})<\/a>/i) || [null, null])[1] || 'N/A';
 
-    const poster = (html.match(/<img[^>]+src="([^"]+)"[^>]*class="imgLoaded"/) || ["", ""])[1];
+    const poster = (html.match(/<img[^>]+class="imgLoaded"[^>]+src="([^"]+)"/i) || [null, null])[1] || 'N/A';
 
-    const genres = [...html.matchAll(/نوع المسلسل\s*:[\s\S]*?<a[^>]*>(.*?)<\/a>/g)].map(m => m[1].trim());
+    const genresBlock = html.match(/<div class="Generes[^>]*>[\s\S]*?<ul>([\s\S]*?)<\/ul>/i);
+    let genres = [];
+
+    if (genresBlock) {
+        genres = [...genresBlock[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)].map(m => m[1].trim());
+    }
+
+    const aliases = [];
+
+    const metaSection = html.match(/<ul class="RightTaxContent">([\s\S]*?)<\/ul>/i);
+    if (metaSection) {
+        const liMatches = [...metaSection[1].matchAll(/<li[^>]*>(.*?)<\/li>/g)];
+        for (const li of liMatches) {
+            const labelMatch = li[1].match(/<span[^>]*>(.*?)<\/span>/);
+            const valueMatch = li[1].match(/<\/span>([\s\S]*)/);
+            const label = labelMatch ? labelMatch[1].trim() : '';
+            let values = [];
+
+            if (valueMatch) {
+                values = [...valueMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)].map(x => x[1].trim());
+                if (values.length === 0) {
+                    const strongVal = valueMatch[1].match(/<strong>([^<]+)<\/strong>/);
+                    if (strongVal) values.push(strongVal[1].trim());
+                }
+            }
+
+            if (label && values.length > 0) {
+                aliases.push(`${label}: ${values.join(', ')}`);
+            }
+        }
+    }
 
     return {
         title,
         description,
         year,
         poster,
-        genres
+        genres,
+        aliases: aliases.join('\n')
     };
 }
 
