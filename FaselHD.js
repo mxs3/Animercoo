@@ -12,7 +12,11 @@ async function searchResults(keyword) {
         const image = match[2];
         const title = match[3].replace(/<[^>]+>/g, "").trim();
 
-        results.push({ title, image, href });
+        results.push({
+            title,
+            image,
+            href
+        });
     }
 
     return JSON.stringify(results);
@@ -23,29 +27,33 @@ function extractDetails(html) {
     const description = descriptionMatch ? descriptionMatch[1].trim() : '';
     const titleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/);
     const aliases = titleMatch ? titleMatch[1].trim() : '';
-    return [{ description, aliases, airdate: "N/A" }];
+    return [{
+        description,
+        aliases,
+        airdate: "N/A"
+    }];
 }
 
-function extractEpisodes(html) {
+async function extractEpisodes(html, url) {
+    // إذا الصفحة فيها "/watch" يبقى نجيب الصفحة الأصلية
+    if (url.includes("/watch")) {
+        const cleanedUrl = url.replace(/\/watch\/?$/, "/");
+        const response = await fetchv2(cleanedUrl);
+        html = await response.text();
+    }
+
     const episodes = [];
-    const match = html.match(/<div class="EpisAs">([\s\S]*?)<\/div>/);
-    
-    if (!match) {
-        console.warn("No 'EpisAs' block found in HTML.");
-        return episodes;
+    const blockMatch = html.match(/<div class="EpisAs">([\s\S]*?)<\/div>/);
+    if (blockMatch) {
+        const epRegex = /<a href="([^"]+\/watch)">[^<]*الحلقة[^<]*(\d+)[^<]*<\/a>/g;
+        let epMatch;
+        while ((epMatch = epRegex.exec(blockMatch[1])) !== null) {
+            episodes.push({
+                href: epMatch[1],
+                number: epMatch[2]
+            });
+        }
     }
-
-    const epBlock = match[1];
-    const epRegex = /<a href="([^"]+\/watch)">[^<]*الحلقة[^<]*(\d+)[^<]*<\/a>/g;
-    let epMatch;
-
-    while ((epMatch = epRegex.exec(epBlock)) !== null) {
-        episodes.push({
-            href: epMatch[1],
-            number: epMatch[2]
-        });
-    }
-
     return episodes;
 }
 
@@ -55,25 +63,17 @@ async function extractStreamUrl(html) {
     const iframeUrl = match[1];
     const response = await fetch(iframeUrl);
     const innerHtml = await response.text();
-
     const directSource = innerHtml.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
     if (directSource) return directSource[1];
-
     const jwplayerSource = innerHtml.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
     if (jwplayerSource) return jwplayerSource[1];
-
     const obfuscatedScript = innerHtml.match(/eval\(function\(p,a,c,k,e,d[\s\S]+?\)\)/);
     if (obfuscatedScript) {
         const unpacked = unpack(obfuscatedScript[0]);
         const unpackedSource = unpacked.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
         if (unpackedSource) return unpackedSource[1];
     }
-
     return null;
-}
-
-function detect(source) {
-    return source.replace(" ", "").startsWith("eval(function(p,a,c,k,e,");
 }
 
 function unpack(source) {
@@ -87,9 +87,10 @@ function unpack(source) {
     }
     source = payload.replace(/\b\w+\b/g, lookup);
     return _replacestrings(source);
-
     function _filterargs(source) {
-        const juicers = [/}\('(.*)', *(\d+|\[\]), *(\d+), *'(.*)'\.split\('\|'\)/];
+        const juicers = [
+            /}\('(.*)', *(\d+|\[\]), *(\d+), *'(.*)'\.split\('\|'\)/,
+        ];
         for (const juicer of juicers) {
             const args = juicer.exec(source);
             if (args) {
@@ -103,7 +104,6 @@ function unpack(source) {
         }
         throw Error("Could not parse p.a.c.k.e.r");
     }
-
     function _replacestrings(source) {
         return source;
     }
@@ -113,7 +113,7 @@ class Unbaser {
     constructor(base) {
         this.ALPHABET = {
             62: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            95: "' !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'"
+            95: "' !\"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'",
         };
         this.dictionary = {};
         this.base = base;
@@ -133,7 +133,6 @@ class Unbaser {
             this.unbase = this._dictunbaser;
         }
     }
-
     _dictunbaser(value) {
         let ret = 0;
         [...value].reverse().forEach((cipher, index) => {
