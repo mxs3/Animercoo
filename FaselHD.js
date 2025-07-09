@@ -1,25 +1,26 @@
-function searchResults(html) {
+async function searchResults(keyword) {
+    const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
+    const response = await fetchv2(url);
+    const html = await response.text();
+
     const results = [];
-    const baseUrl = "https://faselhd.cam";
+    const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
 
-    const itemRegex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?<img[^>]+data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
     let match;
-
-    while ((match = itemRegex.exec(html)) !== null) {
-        const href = match[1].startsWith("http") ? match[1] : baseUrl + match[1];
+    while ((match = regex.exec(html)) !== null) {
+        const href = match[1].startsWith("http") ? match[1] : `https://faselhd.cam${match[1]}`;
         const image = match[2];
-        const title = match[3].replace(/\s+/g, " ").trim();
+        const title = match[3].replace(/<[^>]+>/g, "").trim();
 
         results.push({
-            title: title,
-            image: image,
-            href: href
+            title,
+            image,
+            href
         });
     }
 
-    return results;
+    return JSON.stringify(results);
 }
-
 function extractDetails(html) {
     const descriptionMatch = html.match(/<div class="text-sm md:text-base leading-loose text-justify">([^<]+)<\/div>/);
     const description = descriptionMatch ? descriptionMatch[1].trim() : '';
