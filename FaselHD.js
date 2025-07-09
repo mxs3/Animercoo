@@ -23,15 +23,33 @@ async function searchResults(keyword) {
 }
 
 function extractDetails(html) {
-    const descriptionMatch = html.match(/<div class="text-sm md:text-base leading-loose text-justify">([^<]+)<\/div>/);
-    const description = descriptionMatch ? descriptionMatch[1].trim() : '';
-    const titleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/);
-    const aliases = titleMatch ? titleMatch[1].trim() : '';
-    return [{
+    const title = (html.match(/<h1[^>]*>(.*?)<\/h1>/) || [])[1] || "";
+    const description = decodeHtml((html.match(/<div class="StoryArea">.*?<p>(.*?)<\/p>/s) || [])[1] || "")
+        .replace(/القصة\s*:\s*/i, "")
+        .trim();
+    const year = (html.match(/تاريخ اصدار[^<]*<[^>]*>(\d{4})<\/a>/) || [])[1] || "";
+    const poster = (html.match(/<img[^>]+src="([^"]+)"[^>]*class="imgLoaded"/) || [])[1] || "";
+    const genres = [...html.matchAll(/<li>.*?نوع المسلسل.*?<a[^>]*>(.*?)<\/a>/g)].flatMap(match =>
+        [...match[0].matchAll(/<a[^>]*>(.*?)<\/a>/g)].map(m => m[1].trim())
+    );
+    const type = genres.includes("انيميشن") ? "anime" : "unknown";
+
+    return {
+        title,
         description,
-        aliases,
-        airdate: "N/A"
-    }];
+        genres,
+        year,
+        poster,
+        type
+    };
+}
+
+function extractEpisodes(html) {
+    const matches = [...html.matchAll(/<a[^>]+href="([^"]+)"[^>]*>\s*الحلقة\s*<em>(.*?)<\/em>/g)];
+    return matches.map(match => ({
+        title: `الحلقة ${match[2]}`,
+        url: match[1]
+    }));
 }
 
 async function extractEpisodes(html, url) {
