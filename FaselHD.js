@@ -44,16 +44,7 @@ function extractDetails(html) {
     };
 }
 
-function extractEpisodes(html) {
-    const matches = [...html.matchAll(/<a[^>]+href="([^"]+)"[^>]*>\s*الحلقة\s*<em>(.*?)<\/em>/g)];
-    return matches.map(match => ({
-        title: `الحلقة ${match[2]}`,
-        url: match[1]
-    }));
-}
-
 async function extractEpisodes(html, url) {
-    // إذا الصفحة فيها "/watch" يبقى نجيب الصفحة الأصلية
     if (url.includes("/watch")) {
         const cleanedUrl = url.replace(/\/watch\/?$/, "/");
         const response = await fetchv2(cleanedUrl);
@@ -75,22 +66,50 @@ async function extractEpisodes(html, url) {
     return episodes;
 }
 
-async function extractStreamUrl(html) {
+async function extractStreamUrl(url) {
+    const response = await fetchv2(url);
+    const html = await response.text();
     const match = html.match(/data-watch="([^"]+)"/);
     if (!match) return null;
+
     const iframeUrl = match[1];
-    const response = await fetch(iframeUrl);
-    const innerHtml = await response.text();
-    const directSource = innerHtml.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
-    if (directSource) return directSource[1];
-    const jwplayerSource = innerHtml.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
-    if (jwplayerSource) return jwplayerSource[1];
-    const obfuscatedScript = innerHtml.match(/eval\(function\(p,a,c,k,e,d[\s\S]+?\)\)/);
+    const iframeRes = await fetchv2(iframeUrl);
+    const iframeHtml = await iframeRes.text();
+
+    const directSource = iframeHtml.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
+    if (directSource) {
+        return {
+            url: directSource[1],
+            type: "mp4",
+            quality: "Auto",
+            headers: { Referer: iframeUrl }
+        };
+    }
+
+    const jwSource = iframeHtml.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
+    if (jwSource) {
+        return {
+            url: jwSource[1],
+            type: "mp4",
+            quality: "Auto",
+            headers: { Referer: iframeUrl }
+        };
+    }
+
+    const obfuscatedScript = iframeHtml.match(/eval\(function\(p,a,c,k,e,d[\s\S]+?\)\)/);
     if (obfuscatedScript) {
         const unpacked = unpack(obfuscatedScript[0]);
         const unpackedSource = unpacked.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
-        if (unpackedSource) return unpackedSource[1];
+        if (unpackedSource) {
+            return {
+                url: unpackedSource[1],
+                type: "mp4",
+                quality: "Auto",
+                headers: { Referer: iframeUrl }
+            };
+        }
     }
+
     return null;
 }
 
@@ -106,9 +125,7 @@ function unpack(source) {
     source = payload.replace(/\b\w+\b/g, lookup);
     return _replacestrings(source);
     function _filterargs(source) {
-        const juicers = [
-            /}\('(.*)', *(\d+|\[\]), *(\d+), *'(.*)'\.split\('\|'\)/,
-        ];
+        const juicers = [/}\('(.*)', *(\d+|\[\]), *(\d+), *'(.*)'\.split\('\|'\)/];
         for (const juicer of juicers) {
             const args = juicer.exec(source);
             if (args) {
@@ -116,7 +133,7 @@ function unpack(source) {
                     payload: args[1],
                     symtab: args[4].split("|"),
                     radix: parseInt(args[2]),
-                    count: parseInt(args[3]),
+                    count: parseInt(args[3])
                 };
             }
         }
@@ -131,13 +148,15 @@ class Unbaser {
     constructor(base) {
         this.ALPHABET = {
             62: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            95: "' !\"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'",
+            95: "' !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'"
         };
         this.dictionary = {};
         this.base = base;
+
         if (36 < base && base < 62) {
             this.ALPHABET[base] = this.ALPHABET[base] || this.ALPHABET[62].substr(0, base);
         }
+
         if (2 <= base && base <= 36) {
             this.unbase = (value) => parseInt(value, base);
         } else {
@@ -151,10 +170,11 @@ class Unbaser {
             this.unbase = this._dictunbaser;
         }
     }
+
     _dictunbaser(value) {
         let ret = 0;
         [...value].reverse().forEach((cipher, index) => {
-            ret += (Math.pow(this.base, index)) * this.dictionary[cipher];
+            ret += Math.pow(this.base, index) * this.dictionary[cipher];
         });
         return ret;
     }
