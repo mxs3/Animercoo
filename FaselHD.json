@@ -1,0 +1,19 @@
+{
+    "sourceName": "FasselHD",
+    "iconUrl": "https://fasselhd.com/wp-content/uploads/2023/07/cropped-fasselhd_logo_white-1-192x192.png",
+    "author": {
+        "name": "ibro",
+        "icon": "https://avatars.githubusercontent.com/u/212196142?s=400&u=2456ce4be2bf64074bcf483622cfe726970025fe&v=4",
+        "url": "https://github.com/mxs3"
+    },
+    "version": "1.0.0",
+    "language": "Arabic",
+    "streamType": "HLS & MP4",
+    "quality": "1080p",
+    "baseUrl": "https://fasselhd.com/",
+    "searchBaseUrl": "https://fasselhd.com/page/1/?s=%s",
+    "scriptUrl": "https://raw.githubusercontent.com/mxs3/FaselHD/refs/heads/main/FaselHD.js",
+    "type": "anime/shows/movies",
+    "asyncJS": true,
+    "softsub": true
+}
