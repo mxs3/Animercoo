@@ -28,15 +28,24 @@ function extractDetails(html) {
 
 function extractEpisodes(html) {
     const episodes = [];
-    const regex = /<div class="EpisAs">([\s\S]*?)<\/div>/;
-    const match = html.match(regex);
-    if (match) {
-        const epRegex = /<a href="([^"]+\/watch)">[^<]*الحلقة[^<]*(\d+)[^<]*<\/a>/g;
-        let epMatch;
-        while ((epMatch = epRegex.exec(match[1])) !== null) {
-            episodes.push({ href: epMatch[1], number: epMatch[2] });
-        }
+    const match = html.match(/<div class="EpisAs">([\s\S]*?)<\/div>/);
+    
+    if (!match) {
+        console.warn("No 'EpisAs' block found in HTML.");
+        return episodes;
     }
+
+    const epBlock = match[1];
+    const epRegex = /<a href="([^"]+\/watch)">[^<]*الحلقة[^<]*(\d+)[^<]*<\/a>/g;
+    let epMatch;
+
+    while ((epMatch = epRegex.exec(epBlock)) !== null) {
+        episodes.push({
+            href: epMatch[1],
+            number: epMatch[2]
+        });
+    }
+
     return episodes;
 }
 
