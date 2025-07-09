@@ -21,6 +21,7 @@ async function searchResults(keyword) {
 
     return JSON.stringify(results);
 }
+
 function extractDetails(html) {
     const descriptionMatch = html.match(/<div class="text-sm md:text-base leading-loose text-justify">([^<]+)<\/div>/);
     const description = descriptionMatch ? descriptionMatch[1].trim() : '';
