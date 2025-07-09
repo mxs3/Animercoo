@@ -1,47 +1,73 @@
 async function searchResults(keyword) {
+    const uniqueResults = new Map();
+
     const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
     const response = await fetchv2(url);
     const html = await response.text();
 
-    const results = [];
     const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
 
     let match;
     while ((match = regex.exec(html)) !== null) {
         const href = match[1].startsWith("http") ? match[1] : `https://faselhd.cam${match[1]}`;
         const image = match[2];
-        const title = match[3].replace(/<[^>]+>/g, "").trim();
+        const rawTitle = match[3].replace(/<[^>]+>/g, "").trim();
 
-        results.push({
-            title,
-            image,
-            href
-        });
+        const cleanedTitle = rawTitle
+            .replace(/الحلقة\s*\d+(\.\d+)?(-\d+)?/gi, '')
+            .replace(/الحلقة\s*\d+/gi, '')
+            .replace(/والاخيرة/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        if (!uniqueResults.has(cleanedTitle)) {
+            uniqueResults.set(cleanedTitle, {
+                title: cleanedTitle,
+                image,
+                href
+            });
+        }
     }
 
-    return JSON.stringify(results);
+    const deduplicated = Array.from(uniqueResults.values());
+    return JSON.stringify(deduplicated);
 }
 
-function extractDetails(html) {
-    const title = (html.match(/<h1[^>]*>(.*?)<\/h1>/) || [])[1] || "";
-    const description = decodeHtml((html.match(/<div class="StoryArea">.*?<p>(.*?)<\/p>/s) || [])[1] || "")
-        .replace(/القصة\s*:\s*/i, "")
-        .trim();
-    const year = (html.match(/تاريخ اصدار[^<]*<[^>]*>(\d{4})<\/a>/) || [])[1] || "";
-    const poster = (html.match(/<img[^>]+src="([^"]+)"[^>]*class="imgLoaded"/) || [])[1] || "";
-    const genres = [...html.matchAll(/<li>.*?نوع المسلسل.*?<a[^>]*>(.*?)<\/a>/g)].flatMap(match =>
-        [...match[0].matchAll(/<a[^>]*>(.*?)<\/a>/g)].map(m => m[1].trim())
-    );
-    const type = genres.includes("انيميشن") ? "anime" : "unknown";
+async function extractDetails(url) {
+    const results = [];
+    const response = await soraFetch(url);
+    const html = await response.text();
 
-    return {
-        title,
+    const descriptionMatch = html.match(/<div class="story">\s*<p>([\s\S]*?)<\/p>/);
+    const description = descriptionMatch ? descriptionMatch[1].trim() : 'N/A';
+
+    const airdateMatch = html.match(/<span>موعد الصدور\s*:<\/span>\s*<a[^>]*>(\d{4})<\/a>/);
+    const airdate = airdateMatch ? airdateMatch[1] : 'N/A';
+
+    const aliasMatches = [];
+    const aliasSectionMatch = html.match(/<ul class="RightTaxContent">([\s\S]*?)<\/ul>/);
+    if (aliasSectionMatch) {
+        const section = aliasSectionMatch[1];
+        const items = [...section.matchAll(/<li[^>]*>[\s\S]*?<span>(.*?)<\/span>([\s\S]*?)<\/li>/g)];
+        for (const [, label, content] of items) {
+            if (label.includes("موعد الصدور")) continue;
+
+            const values = [...content.matchAll(/<a[^>]*>(.*?)<\/a>/g)].map(m => m[1].trim());
+            if (values.length === 0) {
+                const strongValue = content.match(/<strong>(.*?)<\/strong>/);
+                if (strongValue) values.push(strongValue[1].trim());
+            }
+            aliasMatches.push(`${label.trim()} ${values.join(', ')}`);
+        }
+    }
+
+    results.push({
         description,
-        genres,
-        year,
-        poster,
-        type
-    };
+        aliases: aliasMatches.join('\n'),
+        airdate
+    });
+
+    return JSON.stringify(results);
 }
 
 async function extractEpisodes(html, url = "") {
