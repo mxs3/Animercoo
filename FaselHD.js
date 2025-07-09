@@ -1,192 +1,107 @@
-async function searchResults(keyword) {
-    const uniqueResults = new Map();
-
-    for (let i = 1; i <= 5; i++) {
-        const url = `https://fasselhd.com/page/${i}/?s=${encodeURIComponent(keyword)}`;
-        const response = await soraFetch(url);
-        const html = await response.text();
-
-        const regex = /<a href="([^"]+)"[^>]*class="item-link"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/g;
-
-        let match;
-        while ((match = regex.exec(html)) !== null) {
-            const href = match[1].trim();
-            const image = match[2].trim();
-            const rawTitle = match[3].trim();
-
-            const cleanedTitle = rawTitle
-                .replace(/الحلقة\s*\d+(\.\d+)?(-\d+)?/gi, '')
-                .replace(/الحلقة\s*\d+/gi, '')
-                .replace(/والاخيرة/gi, '')
-                .replace(/\s+/g, ' ')
-                .trim();
-
-            if (!uniqueResults.has(cleanedTitle)) {
-                uniqueResults.set(cleanedTitle, {
-                    title: cleanedTitle,
-                    href,
-                    image
-                });
-            }
-        }
-    }
-
-    const deduplicated = Array.from(uniqueResults.values());
-    console.log(deduplicated);
-    return JSON.stringify(deduplicated);
-}
-
-async function extractDetails(url) {
-    const response = await soraFetch(url);
-    const html = await response.text();
-
-    const descriptionMatch = html.match(/<div class="post-content-inner">[\s\S]*?<p>([\s\S]*?)<\/p>/);
-    const description = descriptionMatch ? descriptionMatch[1].trim() : 'N/A';
-
-    const airdateMatch = html.match(/<li><strong>السنة:<\/strong>\s*([^<]+)<\/li>/i);
-    const airdate = airdateMatch ? airdateMatch[1].trim() : 'N/A';
-
-    const genreMatches = [...html.matchAll(/<li><strong>النوع:<\/strong>\s*([^<]+)<\/li>/gi)];
-    const genres = genreMatches.map(m => m[1].trim()).join(', ') || 'N/A';
-
-    const directorMatch = html.match(/<li><strong>المخرج:<\/strong>\s*([^<]+)<\/li>/i);
-    const director = directorMatch ? directorMatch[1].trim() : null;
-
-    const statusMatch = html.match(/<li><strong>الحالة:<\/strong>\s*([^<]+)<\/li>/i);
-    const status = statusMatch ? statusMatch[1].trim() : null;
-
-    const result = { description, airdate, genres, director, status };
-    console.log('Details:', result);
-    return JSON.stringify(result);
-}
-
-async function extractEpisodes(url) {
-    const response = await soraFetch(url);
-    const html = await response.text();
-
-    const isSeries = /class="seasons"/.test(html);
+async function searchResults(html) {
     const results = [];
+    const regex = /<a class="block" href="([^"]+)">[\s\S]*?<div class="text-xs font-bold text-white text-center md:text-sm">([^<]+)<\/div>[\s\S]*?<img class="w-full h-full object-cover" src="([^"]+)"/g;
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+        results.push({
+            title: match[2].trim(),
+            image: match[3],
+            href: match[1],
+        });
+    }
+    return results;
+}
 
-    if (isSeries) {
-        const seasonHrefs = [...html.matchAll(/<a href="([^"]+)"[^>]*class="season-link"/g)]
-            .map(m => m[1].trim());
+function extractDetails(html) {
+    const descriptionMatch = html.match(/<div class="text-sm md:text-base leading-loose text-justify">([^<]+)<\/div>/);
+    const description = descriptionMatch ? descriptionMatch[1].trim() : '';
+    const titleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/);
+    const aliases = titleMatch ? titleMatch[1].trim() : '';
+    return [{
+        description,
+        aliases,
+        airdate: "N/A"
+    }];
+}
 
-        for (const seasonUrl of seasonHrefs) {
-            const seasonRes = await soraFetch(seasonUrl);
-            const seasonHtml = await seasonRes.text();
+function extractEpisodes(html) {
+    const episodes = [];
+    const regex = /<div class="EpisAs">([\s\S]*?)<\/div>/;
+    const match = html.match(regex);
+    if (match) {
+        const epRegex = /<a href="([^"]+\/watch)">[^<]*الحلقة[^<]*(\d+)[^<]*<\/a>/g;
+        let epMatch;
+        while ((epMatch = epRegex.exec(match[1])) !== null) {
+            episodes.push({
+                href: epMatch[1],
+                number: epMatch[2]
+            });
+        }
+    }
+    return episodes;
+}
 
-            const episodeRegex = /<a href="([^"]+)"[^>]*class="episode-link"[^>]*>[\s\S]*?<span class="epi-num">(\d+)<\/span>/g;
-            let m;
-            while ((m = episodeRegex.exec(seasonHtml)) !== null) {
-                results.push({
-                    href: m[1].trim(),
-                    number: parseInt(m[2], 10)
-                });
+async function extractStreamUrl(html) {
+    const match = html.match(/data-watch="([^"]+)"/);
+    if (!match) return null;
+    const iframeUrl = match[1];
+    const response = await fetch(iframeUrl);
+    const innerHtml = await response.text();
+    const directSource = innerHtml.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
+    if (directSource) return directSource[1];
+    const jwplayerSource = innerHtml.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
+    if (jwplayerSource) return jwplayerSource[1];
+    const obfuscatedScript = innerHtml.match(/eval\(function\(p,a,c,k,e,d[\s\S]+?\)\)/);
+    if (obfuscatedScript) {
+        const unpacked = unpack(obfuscatedScript[0]);
+        const unpackedSource = unpacked.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
+        if (unpackedSource) return unpackedSource[1];
+    }
+    return null;
+}
+
+function detect(source) {
+    return source.replace(" ", "").startsWith("eval(function(p,a,c,k,e,");
+}
+
+function unpack(source) {
+    let { payload, symtab, radix, count } = _filterargs(source);
+    if (count != symtab.length) throw Error("Malformed p.a.c.k.e.r. symtab.");
+    let unbase = new Unbaser(radix);
+    function lookup(match) {
+        const word = match;
+        let word2 = radix == 1 ? symtab[parseInt(word)] : symtab[unbase.unbase(word)];
+        return word2 || word;
+    }
+    source = payload.replace(/\b\w+\b/g, lookup);
+    return _replacestrings(source);
+    function _filterargs(source) {
+        const juicers = [
+            /}\('(.*)', *(\d+|\[\]), *(\d+), *'(.*)'\.split\('\|'\)/,
+        ];
+        for (const juicer of juicers) {
+            const args = juicer.exec(source);
+            if (args) {
+                return {
+                    payload: args[1],
+                    symtab: args[4].split("|"),
+                    radix: parseInt(args[2]),
+                    count: parseInt(args[3]),
+                };
             }
         }
-    } else {
-        const watchMatch = html.match(/<a[^>]*href="([^"]+)"[^>]*class="play-btn"/);
-        if (watchMatch) {
-            results.push({ href: watchMatch[1].trim(), number: 1 });
-        }
+        throw Error("Could not parse p.a.c.k.e.r");
     }
-
-    results.reverse();
-    console.log('Episodes:', results);
-    return JSON.stringify(results);
-}
-
-async function extractStreamUrl(url) {
-    if (!_0xCheck()) return 'https://files.catbox.moe/avolvc.mp4';
-
-    const pageRes = await soraFetch(url);
-    const pageHtml = await pageRes.text();
-    const next = pageHtml.match(/<a class="watch" href="([^"]+)"/);
-    const watchUrl = next ? next[1].trim() : null;
-    if (!watchUrl) return JSON.stringify({ streams: [], subtitles: "" });
-
-    const watchRes = await soraFetch(watchUrl);
-    const watchHtml = await watchRes.text();
-    const regex = /<li[^>]+data-id="([^"]+)"[^>]+data-server="([^"]+)"/g;
-    const matches = [];
-    let m;
-    while ((m = regex.exec(watchHtml)) !== null) {
-        matches.push({ dataId: m[1], dataServer: m[2] });
+    function _replacestrings(source) {
+        return source;
     }
-
-    const embeds = [];
-    for (const mm of matches) {
-        const postUrl = "https://fasselhd.com/wp-content/themes/movies2023/Ajaxat/Single/Server.php";
-        const headers = {
-            "Host": "fasselhd.com",
-            "Origin": "https://fasselhd.com",
-            "Referer": watchUrl,
-            "User-Agent": "Mozilla/5.0",
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "X-Requested-With": "XMLHttpRequest"
-        };
-        const res = await soraFetch(postUrl, {
-            method: "POST",
-            headers,
-            body: `id=${mm.dataId}&i=${mm.dataServer}`
-        });
-        const text = await res.text();
-        const f = text.match(/<iframe[^>]+src="([^"]+)"/);
-        if (f) embeds.push(f[1].trim());
-    }
-
-    const streams = [];
-    for (const embed of embeds) {
-        const resEmbed = await soraFetch(embed, {
-            headers: {
-                "User-Agent": "Mozilla/5.0",
-                "Referer": watchUrl,
-                "Accept": "text/html"
-            }
-        });
-        const htmlE = await resEmbed.text();
-        const sMatch = htmlE.match(/<script[^>]*>\s*(eval\(function\(p,a,c,k,e,d[\s\S]*?)<\/script>/);
-        if (!sMatch) continue;
-        const unpacked = unpack(sMatch[1]);
-
-        let fileMatch = unpacked.match(/file:\s*"([^"]+)"/);
-        if (fileMatch) {
-            streams.push({ title: "FasselHD Stream", streamUrl: fileMatch[1].trim(), headers: {} });
-            continue;
-        }
-
-        fileMatch = unpacked.match(/https?:\/\/[^"'\s]+\/hls2\/[^"'\s]+/g);
-        if (fileMatch) {
-            streams.push({ title: "FasselHD HLS", streamUrl: fileMatch[0].trim(), headers: {} });
-            continue;
-        }
-    }
-
-    streams.reverse();
-    return JSON.stringify({ streams, subtitles: "" });
-}
-
-async function soraFetch(url, options = { headers: {}, method: 'GET', body: null }) {
-    try {
-        return await fetchv2(url, options.headers, options.method, options.body);
-    } catch (e) {
-        try {
-            return await fetch(url, options);
-        } catch (e2) {
-            return null;
-        }
-    }
-}
-
-function _0xCheck() {
-    return true;
 }
 
 class Unbaser {
     constructor(base) {
         this.ALPHABET = {
             62: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            95: "' !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'"
+            95: "' !\"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'",
         };
         this.dictionary = {};
         this.base = base;
@@ -196,34 +111,21 @@ class Unbaser {
         if (2 <= base && base <= 36) {
             this.unbase = (value) => parseInt(value, base);
         } else {
-            [...this.ALPHABET[base]].forEach((c, i) => {
-                this.dictionary[c] = i;
-            });
+            try {
+                [...this.ALPHABET[base]].forEach((cipher, index) => {
+                    this.dictionary[cipher] = index;
+                });
+            } catch (er) {
+                throw Error("Unsupported base encoding.");
+            }
             this.unbase = this._dictunbaser;
         }
     }
     _dictunbaser(value) {
         let ret = 0;
-        [...value].reverse().forEach((c, idx) => {
-            ret += Math.pow(this.base, idx) * this.dictionary[c];
+        [...value].reverse().forEach((cipher, index) => {
+            ret += (Math.pow(this.base, index)) * this.dictionary[cipher];
         });
         return ret;
     }
-}
-
-function unpack(source) {
-    const juicer1 = /\}$begin:math:text$'(.*)', *(\\d+|\\[\\]), *(\\d+), *'(.*)'\\.split\\('\\|'$end:math:text$, *(\d+), *(.*)\)\)/;
-    const juicer2 = /\}$begin:math:text$'(.*)', *(\\d+|\\[\\]), *(\\d+), *'(.*)'\\.split\\('\\|'$end:math:text$/;
-    let args = juicer1.exec(source) || juicer2.exec(source);
-    if (!args) throw new Error("Bad Packer.");
-    let payload = args[1];
-    let radix = parseInt(args[2]);
-    let count = parseInt(args[3]);
-    let symtab = args[4].split('|');
-    if (count !== symtab.length) throw new Error("Bad symtab");
-    let unbase = new Unbaser(radix);
-    function lookup(word) {
-        return radix === 1 ? symtab[parseInt(word)] : symtab[unbase.unbase(word)] || word;
-    }
-    return payload.replace(/\b\w+\b/g, lookup);
 }
