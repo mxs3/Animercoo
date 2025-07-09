@@ -1,235 +1,143 @@
+// 1. البحث عن الأنميات/المسلسلات
 async function searchResults(keyword) {
-    const uniqueResults = new Map();
+  const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
+  const html = await (await fetchv2(url)).text();
+  const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
 
-    const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
-    const response = await fetchv2(url);
-    const html = await response.text();
+  const seen = new Set(), results = [];
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    const href = m[1].startsWith('http') ? m[1] : `https://faselhd.cam${m[1]}`;
+    if (seen.has(href)) continue;
+    seen.add(href);
 
-    const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
-
-    let match;
-    while ((match = regex.exec(html)) !== null) {
-        const href = match[1].startsWith("http") ? match[1] : `https://faselhd.cam${match[1]}`;
-        const image = match[2];
-        const rawTitle = match[3].replace(/<[^>]+>/g, "").trim();
-
-        const cleanedTitle = rawTitle
-            .replace(/الحلقة\s*\d+(\.\d+)?(-\d+)?/gi, '')
-            .replace(/الحلقة\s*\d+/gi, '')
-            .replace(/والاخيرة/gi, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-        if (!uniqueResults.has(cleanedTitle)) {
-            uniqueResults.set(cleanedTitle, {
-                title: cleanedTitle,
-                image,
-                href
-            });
-        }
-    }
-
-    const deduplicated = Array.from(uniqueResults.values());
-    return JSON.stringify(deduplicated);
+    const rawTitle = m[3].replace(/<[^>]+>/g, '').trim();
+    const image = m[2];
+    results.push({ title: rawTitle, href, image });
+  }
+  return results; // JSON.stringify(results) حسب استخدام Sora
 }
 
-async function extractDetails(url) {
-    const response = await fetchv2(url);
-    const html = await response.text();
+// 2. استخراج بيانات الأنمي/المسلسل
+async function extractDetails(pageUrl) {
+  const html = await (await fetchv2(pageUrl)).text();
+  
+  const title = (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/) || ['', ''])[1].trim() || 'N/A';
+  const description = ((html.match(/<div class="StoryArea">[\s\S]*?<p>([\s\S]*?)<\/p>/) || ['', ''])[1]
+    .replace(/^(?:القصة|القصه)\s*[:：]?/i, '').trim()) || 'N/A';
+  const year = (html.match(/تاريخ\s+اصدار[^<]*<[^>]*>(\d{4})<\/a>/i) || ['', 'N/A'])[1];
+  const poster = (html.match(/<div class="Poster">[\s\S]*?<img[^>]+data-src="([^"]+)"/i) || ['', ''])[1] || '';
 
-    const title = (html.match(/<h1[^>]*class="Title"[^>]*>(.*?)<\/h1>/i) || [null, null])[1]?.trim() || 'N/A';
+  const genres = [...html.matchAll(/نوع المسلسل[^<]*<a[^>]*>([^<]+)<\/a>/g)].map(g => g[1].trim());
+  const duration = (html.match(/مدة\s+المسلسل[^<]*<a[^>]*>([^<]+)<\/a>/i) || ['', ''])[1] || '';
+  const awards = (html.match(/جوائز\s+المسلسل[^<]*<a[^>]*>([^<]+)<\/a>/i) || ['', ''])[1] || '';
 
-    const description = (html.match(/<div class="StoryArea">\s*<p>(.*?)<\/p>/i) || [null, null])[1]
-        ?.replace(/^(?:القصة|القصه)\s*[:：]?\s*/i, "")
-        ?.trim() || 'N/A';
-
-    const year = (html.match(/تاريخ (?:الاصدار|الإصدار)[^<]*?<a[^>]*>(\d{4})<\/a>/i) || [null, null])[1] || 'N/A';
-
-    const poster = (html.match(/<img[^>]+class="imgLoaded"[^>]+src="([^"]+)"/i) || [null, null])[1] || 'N/A';
-
-    const genresBlock = html.match(/<div class="Generes[^>]*>[\s\S]*?<ul>([\s\S]*?)<\/ul>/i);
-    let genres = [];
-
-    if (genresBlock) {
-        genres = [...genresBlock[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)].map(m => m[1].trim());
+  const aliases = [];
+  const block = html.match(/<ul class="RightTaxContent">([\s\S]*?)<\/ul>/i);
+  if (block) {
+    for (const li of block[1].matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)) {
+      const inner = li[1];
+      const lbl = (inner.match(/<span[^>]*>([^<]+)<\/span>/) || ['', ''])[1].trim();
+      let vals = [...inner.matchAll(/<a[^>]*>([^<]+)<\/a>/g)].map(x => x[1].trim());
+      if (vals.length === 0) {
+        const s = (inner.match(/<strong>([^<]+)<\/strong>/) || ['', ''])[1];
+        if (s) vals.push(s.trim());
+      }
+      if (lbl && vals.length) aliases.push(`${lbl}: ${vals.join(', ')}`);
     }
-
-    const aliases = [];
-
-    const metaSection = html.match(/<ul class="RightTaxContent">([\s\S]*?)<\/ul>/i);
-    if (metaSection) {
-        const liMatches = [...metaSection[1].matchAll(/<li[^>]*>(.*?)<\/li>/g)];
-        for (const li of liMatches) {
-            const labelMatch = li[1].match(/<span[^>]*>(.*?)<\/span>/);
-            const valueMatch = li[1].match(/<\/span>([\s\S]*)/);
-            const label = labelMatch ? labelMatch[1].trim() : '';
-            let values = [];
-
-            if (valueMatch) {
-                values = [...valueMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)].map(x => x[1].trim());
-                if (values.length === 0) {
-                    const strongVal = valueMatch[1].match(/<strong>([^<]+)<\/strong>/);
-                    if (strongVal) values.push(strongVal[1].trim());
-                }
-            }
-
-            if (label && values.length > 0) {
-                aliases.push(`${label}: ${values.join(', ')}`);
-            }
-        }
-    }
-
-    return {
-        title,
-        description,
-        year,
-        poster,
-        genres,
-        aliases: aliases.join('\n')
-    };
-}
-
-async function extractEpisodes(url) {
-  const res = await fetchv2(url);
-  let html = await res.text();
-  if (url.includes("/watch")) {
-    html = await fetchv2(url.replace(/\/watch\/?$/, "/")).then(r => r.text());
   }
 
+  return { title, description, year, poster, genres, duration, awards, aliases: aliases.join('\n') };
+}
+
+// 3. استخراج الحلقات وروابط السيرفرات
+async function extractEpisodes(pageUrl) {
+  const baseUrl = pageUrl.endsWith('/watch/') ? pageUrl.replace(/\/watch\/$/, '/') : pageUrl;
+  const html = await (await fetchv2(baseUrl)).text();
+  
   const listBlock = html.match(/<div class="EpisodesList">([\s\S]*?)<\/div>/);
   if (!listBlock) return [];
 
-  const epLinks = [...listBlock[1].matchAll(/<a[^>]+href="([^"]+)"[^>]*>\s*الحلقة\s*<em>(\d+)<\/em>/g)];
   const episodes = [];
+  for (const a of listBlock[1].matchAll(/<a[^>]+href="([^"]+)"[^>]*>\s*الحلقة\s*<em>(\d+)<\/em>/g)) {
+    const epUrl = a[1].startsWith('http') ? a[1] : `https://faselhd.cam${a[1]}`;
+    const epHtml = await (await fetchv2(epUrl)).text();
 
-  for (let [_, link, num] of epLinks) {
-    const fullUrl = link.includes("http") ? link : `https://faselhd.cam${link}`;
-    const epHtml = await fetchv2(fullUrl).then(r => r.text());
-    const matches = [...epHtml.matchAll(/<li\s+data-watch="([^"]+)"[^>]*><span>[^<]*<\/span>([^<]+)<\/li>/g)];
-    const sources = matches.map(m => ({
-      name: m[2].trim(),
-      url: m[1]
-    }));
-    episodes.push({
-      number: num,
-      url: fullUrl,
-      sources
-    });
+    const sources = [...epHtml.matchAll(/<li\s+data-watch="([^"]+)"[^>]*><span>[^<]*<\/span>([^<]+)<\/li>/g)]
+      .map(x => ({ name: x[2].trim(), url: x[1] }));
+    episodes.push({ number: a[2], url: epUrl, sources });
   }
-
   return episodes;
 }
 
-async function extractStreamUrl(url) {
-    const response = await fetchv2(url);
-    const html = await response.text();
-    const match = html.match(/data-watch="([^"]+)"/);
-    if (!match) return null;
+// 4. استخراج رابط الفيديو نفسه
+async function extractStreamUrl(sourceUrl) {
+  const html = await (await fetchv2(sourceUrl)).text();
+  const iframeUrl = (html.match(/data-watch="([^"]+)"/) || ['', ''])[1];
+  if (!iframeUrl) return null;
 
-    const iframeUrl = match[1];
-    const iframeRes = await fetchv2(iframeUrl);
-    const iframeHtml = await iframeRes.text();
+  const iframeHtml = await (await fetchv2(iframeUrl)).text();
+  const direct = iframeHtml.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
+  const jw = iframeHtml.match(/file:\s*["']([^"']+\.mp4[^"]*)["']/);
+  const obf = iframeHtml.match(/eval\(function\(p,a,c,k,e,d[\s\S]+?\)\)/);
 
-    const directSource = iframeHtml.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
-    if (directSource) {
-        return {
-            url: directSource[1],
-            type: "mp4",
-            quality: "Auto",
-            headers: { Referer: iframeUrl }
-        };
-    }
-
-    const jwSource = iframeHtml.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
-    if (jwSource) {
-        return {
-            url: jwSource[1],
-            type: "mp4",
-            quality: "Auto",
-            headers: { Referer: iframeUrl }
-        };
-    }
-
-    const obfuscatedScript = iframeHtml.match(/eval\(function\(p,a,c,k,e,d[\s\S]+?\)\)/);
-    if (obfuscatedScript) {
-        const unpacked = unpack(obfuscatedScript[0]);
-        const unpackedSource = unpacked.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
-        if (unpackedSource) {
-            return {
-                url: unpackedSource[1],
-                type: "mp4",
-                quality: "Auto",
-                headers: { Referer: iframeUrl }
-            };
-        }
-    }
-
-    return null;
+  let mediaUrl = direct ? direct[1] : jw ? jw[1] : null;
+  if (!mediaUrl && obf) {
+    const up = unpack(obf[0]);
+    mediaUrl = (up.match(/file:\s*["']([^"']+\.mp4[^"]*)["']/) || ['', ''])[1];
+  }
+  if (!mediaUrl) return null;
+  return { url: mediaUrl, type: 'mp4', quality: 'Auto', headers: { Referer: iframeUrl } };
 }
 
-function unpack(source) {
-    let { payload, symtab, radix, count } = _filterargs(source);
-    if (count != symtab.length) throw Error("Malformed p.a.c.k.e.r. symtab.");
-    let unbase = new Unbaser(radix);
-    function lookup(match) {
-        const word = match;
-        let word2 = radix == 1 ? symtab[parseInt(word)] : symtab[unbase.unbase(word)];
-        return word2 || word;
+// 5. دعم فك تشفير الأكواد
+function unpack(packedCode) {
+    const args = _filterArgs(packedCode);
+    if (!args) return '';
+
+    const { payload, symtab, radix, count } = args;
+    if (count !== symtab.length) throw new Error("Malformed p.a.c.k.e.r. symtab.");
+
+    const unbase = new Unbaser(radix);
+
+    function lookup(word) {
+        const value = radix === 1 ? parseInt(word) : unbase.unbase(word);
+        return symtab[value] || word;
     }
-    source = payload.replace(/\b\w+\b/g, lookup);
-    return _replacestrings(source);
-    function _filterargs(source) {
-        const juicers = [/}\('(.*)', *(\d+|\[\]), *(\d+), *'(.*)'\.split\('\|'\)/];
-        for (const juicer of juicers) {
-            const args = juicer.exec(source);
-            if (args) {
-                return {
-                    payload: args[1],
-                    symtab: args[4].split("|"),
-                    radix: parseInt(args[2]),
-                    count: parseInt(args[3])
-                };
-            }
-        }
-        throw Error("Could not parse p.a.c.k.e.r");
-    }
-    function _replacestrings(source) {
-        return source;
-    }
+
+    const unpacked = payload.replace(/\b\w+\b/g, lookup);
+    return unpacked;
+}
+
+function _filterArgs(source) {
+    const pattern = /}\('(.*)', *(\d+), *(\d+), *'(.*)'\.split\('\|'\)/;
+    const match = pattern.exec(source);
+    if (!match) return null;
+
+    return {
+        payload: match[1],
+        radix: parseInt(match[2]),
+        count: parseInt(match[3]),
+        symtab: match[4].split('|')
+    };
 }
 
 class Unbaser {
     constructor(base) {
-        this.ALPHABET = {
-            62: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            95: "' !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'"
-        };
-        this.dictionary = {};
         this.base = base;
+        this.ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        this.dict = {};
 
-        if (36 < base && base < 62) {
-            this.ALPHABET[base] = this.ALPHABET[base] || this.ALPHABET[62].substr(0, base);
-        }
-
-        if (2 <= base && base <= 36) {
-            this.unbase = (value) => parseInt(value, base);
-        } else {
-            try {
-                [...this.ALPHABET[base]].forEach((cipher, index) => {
-                    this.dictionary[cipher] = index;
-                });
-            } catch (er) {
-                throw Error("Unsupported base encoding.");
-            }
-            this.unbase = this._dictunbaser;
+        for (let i = 0; i < this.ALPHABET.length; i++) {
+            this.dict[this.ALPHABET[i]] = i;
         }
     }
 
-    _dictunbaser(value) {
-        let ret = 0;
-        [...value].reverse().forEach((cipher, index) => {
-            ret += Math.pow(this.base, index) * this.dictionary[cipher];
-        });
-        return ret;
+    unbase(str) {
+        let result = 0;
+        for (let i = 0; i < str.length; i++) {
+            result = result * this.base + this.dict[str[i]];
+        }
+        return result;
     }
 }
