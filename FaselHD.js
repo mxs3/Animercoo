@@ -1,15 +1,24 @@
-async function searchResults(html) {
-    const results = [];
-    const regex = /<a class="block" href="([^"]+)">[\s\S]*?<div class="text-xs font-bold text-white text-center md:text-sm">([^<]+)<\/div>[\s\S]*?<img class="w-full h-full object-cover" src="([^"]+)"/g;
-    let match;
-    while ((match = regex.exec(html)) !== null) {
-        results.push({
-            title: match[2].trim(),
-            image: match[3],
-            href: match[1],
-        });
+async function searchResults(keyword) {
+    try {
+        const searchUrl = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
+        const response = await fetch(searchUrl);
+        const html = await response.text();
+
+        const results = [];
+        const regex = /<div class="Thumb">[\s\S]*?<a href="([^"]+)"[^>]*title="([^"]+)">[\s\S]*?<img src="([^"]+)"/g;
+        let match;
+
+        while ((match = regex.exec(html)) !== null) {
+            const href = match[1];
+            const title = match[2];
+            const image = match[3];
+            results.push({ title, image, href });
+        }
+
+        return JSON.stringify(results); // <-- أهم سطر
+    } catch (e) {
+        return JSON.stringify([]);
     }
-    return results;
 }
 
 function extractDetails(html) {
