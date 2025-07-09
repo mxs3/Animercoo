@@ -212,8 +212,8 @@ class Unbaser {
 }
 
 function unpack(source) {
-    const juicer1 = /}$begin:math:text$'(.*)', *(\\d+|\\[\\]), *(\\d+), *'(.*)'\\.split\\('\\|'$end:math:text$, *(\d+), *(.*)\)\)/;
-    const juicer2 = /}$begin:math:text$'(.*)', *(\\d+|\\[\\]), *(\\d+), *'(.*)'\\.split\\('\\|'$end:math:text$/;
+    const juicer1 = /\}$begin:math:text$'(.*)', *(\\d+|\\[\\]), *(\\d+), *'(.*)'\\.split\\('\\|'$end:math:text$, *(\d+), *(.*)\)\)/;
+    const juicer2 = /\}$begin:math:text$'(.*)', *(\\d+|\\[\\]), *(\\d+), *'(.*)'\\.split\\('\\|'$end:math:text$/;
     let args = juicer1.exec(source) || juicer2.exec(source);
     if (!args) throw new Error("Bad Packer.");
     let payload = args[1];
@@ -222,8 +222,8 @@ function unpack(source) {
     let symtab = args[4].split('|');
     if (count !== symtab.length) throw new Error("Bad symtab");
     let unbase = new Unbaser(radix);
-    function lookup(w) {
-        return radix === 1 ? symtab[parseInt(w)] : symtab[unbase.unbase(w)] || w;
+    function lookup(word) {
+        return radix === 1 ? symtab[parseInt(word)] : symtab[unbase.unbase(word)] || word;
     }
     return payload.replace(/\b\w+\b/g, lookup);
 }
