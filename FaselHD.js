@@ -1,24 +1,23 @@
-async function searchResults(keyword) {
-    try {
-        const searchUrl = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
-        const response = await fetch(searchUrl);
-        const html = await response.text();
+function searchResults(html) {
+    const results = [];
+    const baseUrl = "https://faselhd.cam";
 
-        const results = [];
-        const regex = /<div class="Thumb">[\s\S]*?<a href="([^"]+)"[^>]*title="([^"]+)">[\s\S]*?<img src="([^"]+)"/g;
-        let match;
+    const itemRegex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?<img[^>]+data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
+    let match;
 
-        while ((match = regex.exec(html)) !== null) {
-            const href = match[1];
-            const title = match[2];
-            const image = match[3];
-            results.push({ title, image, href });
-        }
+    while ((match = itemRegex.exec(html)) !== null) {
+        const href = match[1].startsWith("http") ? match[1] : baseUrl + match[1];
+        const image = match[2];
+        const title = match[3].replace(/\s+/g, " ").trim();
 
-        return JSON.stringify(results); // <-- أهم سطر
-    } catch (e) {
-        return JSON.stringify([]);
+        results.push({
+            title: title,
+            image: image,
+            href: href
+        });
     }
+
+    return results;
 }
 
 function extractDetails(html) {
