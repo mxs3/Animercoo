@@ -90,46 +90,34 @@ async function extractDetails(url) {
 }
 
 async function extractEpisodes(url) {
-    const response = await fetchv2(url);
-    const html = await response.text();
+  const res = await fetchv2(url);
+  let html = await res.text();
+  if (url.includes("/watch")) {
+    html = await fetchv2(url.replace(/\/watch\/?$/, "/")).then(r => r.text());
+  }
 
-    const episodes = [];
+  const listBlock = html.match(/<div class="EpisodesList">([\s\S]*?)<\/div>/);
+  if (!listBlock) return [];
 
-    // نحاول نجيب كل روابط الحلقات داخل الكتلة العامة للحلقات
-    const sectionMatch = html.match(/<div class="EpisAs">([\s\S]*?)<\/div>/);
-    if (!sectionMatch) return JSON.stringify([]);
+  const epLinks = [...listBlock[1].matchAll(/<a[^>]+href="([^"]+)"[^>]*>\s*الحلقة\s*<em>(\d+)<\/em>/g)];
+  const episodes = [];
 
-    const block = sectionMatch[1];
+  for (let [_, link, num] of epLinks) {
+    const fullUrl = link.includes("http") ? link : `https://faselhd.cam${link}`;
+    const epHtml = await fetchv2(fullUrl).then(r => r.text());
+    const matches = [...epHtml.matchAll(/<li\s+data-watch="([^"]+)"[^>]*><span>[^<]*<\/span>([^<]+)<\/li>/g)];
+    const sources = matches.map(m => ({
+      name: m[2].trim(),
+      url: m[1]
+    }));
+    episodes.push({
+      number: num,
+      url: fullUrl,
+      sources
+    });
+  }
 
-    // نطابق كل عنصر حلقة بداخله الرابط والعنوان
-    const matches = [...block.matchAll(/<a[^>]+href="([^"]+)"[^>]*>\s*<div class="EPBox">([\s\S]*?)<\/div>\s*<\/a>/g)];
-
-    for (const match of matches) {
-        const link = match[1].trim();
-        const content = match[2];
-
-        // رقم الحلقة
-        const numberMatch = content.match(/<div class="EPNum">([^<]+)<\/div>/);
-        const number = numberMatch ? numberMatch[1].trim() : 'حلقة';
-
-        // عنوان فرعي للحلقة (اختياري)
-        const titleMatch = content.match(/<div class="EPTitle">([^<]+)<\/div>/);
-        const subtitle = titleMatch ? titleMatch[1].trim() : '';
-
-        // الجودة (اختياري)
-        const qualityMatch = content.match(/<div class="EPQuality">([^<]+)<\/div>/);
-        const quality = qualityMatch ? qualityMatch[1].trim() : '';
-
-        // تركيب اسم الحلقة النهائي
-        const episodeTitle = `${number}${subtitle ? ' - ' + subtitle : ''}${quality ? ' [' + quality + ']' : ''}`.trim();
-
-        episodes.push({
-            title: episodeTitle,
-            url: link
-        });
-    }
-
-    return JSON.stringify(episodes);
+  return episodes;
 }
 
 async function extractStreamUrl(url) {
