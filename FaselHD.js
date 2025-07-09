@@ -44,7 +44,7 @@ function extractDetails(html) {
     };
 }
 
-async function extractEpisodes(html, url) {
+async function extractEpisodes(html, url = "") {
     if (url.includes("/watch")) {
         const cleanedUrl = url.replace(/\/watch\/?$/, "/");
         const response = await fetchv2(cleanedUrl);
