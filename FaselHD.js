@@ -34,14 +34,13 @@ async function searchResults(keyword) {
 }
 
 async function extractDetails(url) {
-    const results = [];
     const response = await soraFetch(url);
     const html = await response.text();
 
-    const descriptionMatch = html.match(/<div class="story">\s*<p>([\s\S]*?)<\/p>/);
+    const descriptionMatch = html.match(/<div class="story">\s*<p>(.*?)<\/p>/s);
     const description = descriptionMatch ? descriptionMatch[1].trim() : 'N/A';
 
-    const airdateMatch = html.match(/<span>موعد الصدور\s*:<\/span>\s*<a[^>]*>(\d{4})<\/a>/);
+    const airdateMatch = html.match(/<span>\s*موعد الصدور\s*:<\/span>\s*<a[^>]*>(\d{4})<\/a>/);
     const airdate = airdateMatch ? airdateMatch[1] : 'N/A';
 
     const aliasMatches = [];
@@ -61,13 +60,11 @@ async function extractDetails(url) {
         }
     }
 
-    results.push({
+    return JSON.stringify([{
         description,
         aliases: aliasMatches.join('\n'),
         airdate
-    });
-
-    return JSON.stringify(results);
+    }]);
 }
 
 async function extractEpisodes(html, url = "") {
