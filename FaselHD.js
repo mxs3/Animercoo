@@ -4,11 +4,7 @@ async function fetchSearch(url) {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.5',
-      'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache',
-      'Upgrade-Insecure-Requests': '1',
-      'Referer': 'https://faselhd.cam/',
-      'Connection': 'keep-alive'
+      'Referer': 'https://faselhd.cam/'
     }
   });
   return await res.text();
@@ -18,18 +14,18 @@ async function searchResults(keyword) {
   if (!keyword) return JSON.stringify([]);
   const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
   const html = await fetchSearch(url);
-  if (!html.includes('Small')) return JSON.stringify([]);
+  if (!html.includes('MovOv')) return JSON.stringify([]);
 
-  const regex = /<a\s+href="([^"]+)"[^>]*>\s*<div[^>]*class="poster"[^>]*>[\s\S]*?data-src="([^"]+)"[\s\S]*?<h3[^>]*>(.*?)<\/h3>/g;
-  const seen = new Set(), results = [];
+  const regex = /<a[^>]+href="([^"]+)"[^>]*>\s*<div[^>]*class="MovOv"[^>]*>[\s\S]*?data-src="([^"]+)"[\s\S]*?<h3[^>]*>(.*?)<\/h3>/g;
+  const results = [], seen = new Set();
   let m;
   while ((m = regex.exec(html)) !== null) {
     const href = m[1].startsWith('http') ? m[1] : `https://faselhd.cam${m[1]}`;
     if (seen.has(href)) continue;
     seen.add(href);
-    const rawTitle = m[3].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    const title = m[3].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     const image = m[2];
-    results.push({ title: rawTitle, href, image });
+    results.push({ title, href, image });
   }
   return JSON.stringify(results);
 }
