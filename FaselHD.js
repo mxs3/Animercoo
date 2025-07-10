@@ -1,6 +1,13 @@
+async function fetchAndSearch(keyword) {
+    const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
+    const res = await fetch(url);
+    const html = await res.text();
+    return await searchResults(html);
+}
+
 async function searchResults(html) {
     const results = [];
-    const regex = /<div class="AnimationBox">.*?<a href="(.*?)".*?<div class="Title">(.*?)<\/div>/gs;
+    const regex = /<div class="AnimationBox">[\s\S]*?<a href="([^"]+)"[^>]*>[\s\S]*?<div class="Title">([^<]+)<\/div>/g;
     let match;
     while ((match = regex.exec(html)) !== null) {
         results.push({
