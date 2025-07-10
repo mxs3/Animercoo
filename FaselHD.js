@@ -1,33 +1,30 @@
 async function fetchSearch(url) {
   const res = await fetchv2(url, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.5',
-      'Referer': 'https://faselhd.cam/'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      'Referer': 'https://faselhd.cam/',
+      'Accept': 'text/html'
     }
   });
   return await res.text();
 }
 
 async function searchResults(keyword) {
-  if (!keyword) return JSON.stringify([]);
   const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
   const html = await fetchSearch(url);
-  if (!html.includes('MovOv')) return JSON.stringify([]);
 
-  const regex = /<a[^>]+href="([^"]+)"[^>]*>\s*<div[^>]*class="MovOv"[^>]*>[\s\S]*?data-src="([^"]+)"[\s\S]*?<h3[^>]*>(.*?)<\/h3>/g;
+  const regex = /<div class="Small--Box">[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[\s\S]*?<h3 class="title">([^<]+)<\/h3>/g;
   const results = [], seen = new Set();
-  let m;
-  while ((m = regex.exec(html)) !== null) {
-    const href = m[1].startsWith('http') ? m[1] : `https://faselhd.cam${m[1]}`;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    const href = match[1].startsWith('http') ? match[1] : `https://faselhd.cam${match[1]}`;
     if (seen.has(href)) continue;
     seen.add(href);
-    const title = m[3].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-    const image = m[2];
+    const image = match[2];
+    const title = match[3].trim();
     results.push({ title, href, image });
   }
-  return JSON.stringify(results);
+  return results;
 }
 
 // 2. استخراج بيانات الأنمي/المسلسل
