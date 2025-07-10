@@ -19,28 +19,38 @@ async function searchResults(keyword) {
 async function extractDetails(url) {
     const response = await fetchv2(url);
     const html = await response.text();
-    const title = (html.match(/<h1[^>]*>(.*?)<\/h1>/) || ["",""])[1].trim();
-    const description = (html.match(/<div class="StoryArea">\s*<p>([\s\S]*?)<\/p>/) || ["",""])[1].replace(/^\s*القصة\s*:\s*/i,"").trim();
-    const year = (html.match(/تاريخ اصدار[^<]*<[^>]*>(\d{4})<\/a>/) || ["",""])[1];
-    const poster = (html.match(/<img[^>]+src="([^"]+)"[^>]*class="imgLoaded"/) || ["",""])[1];
-    const genres = [...html.matchAll(/نوع المسلسل :[\s\S]*?<a[^>]*>(.*?)<\/a>/g)].map(m=>m[1].trim());
-    return { title, description, year, poster, genres };
+
+    const title = (html.match(/<h1[^>]*class="Title"[^>]*>(.*?)<\/h1>/i) || [null, null])[1]?.trim() || "";
+    const description = (html.match(/<div class="StoryArea">\s*<p>(.*?)<\/p>/i) || [null, null])[1]?.trim() || "";
+    const year = (html.match(/تاريخ (?:الاصدار|الإصدار)[^<]*?<a[^>]*>(\d{4})<\/a>/i) || [null, null])[1] || "";
+    const poster = (html.match(/<img[^>]+class="imgLoaded"[^>]+src="([^"]+)"/i) || [null, null])[1] || "";
+
+    const genresMatch = html.match(/<div class="Generes[^>]*>[\s\S]*?<ul>([\s\S]*?)<\/ul>/i);
+    const genres = genresMatch ? [...genresMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)].map(m => m[1].trim()) : [];
+
+    return JSON.stringify({
+        title,
+        description,
+        year,
+        poster,
+        genres
+    });
 }
 
 async function extractEpisodes(url) {
-    const cleanUrl = url.includes("/watch") ? url.replace(/\/watch\/?$/,"/") : url;
-    const resp = await fetchv2(cleanUrl);
-    const html = await resp.text();
-    const container = html.match(/<div class="EpisAs">([\s\S]*?)<\/div>/);
-    const eps = [];
-    if (container) {
-        const re = /<a href="([^"]+\/watch)".*?>[^<]*الحلقة[^<]*<em>(\d+)<\/em>/g;
-        let m;
-        while ((m = re.exec(container[1])) !== null) {
-            eps.push({ title: `الحلقة ${m[2]}`, url: m[1] });
-        }
-    }
-    return eps;
+    const response = await fetchv2(url.includes("/watch") ? url.replace(/\/watch\/?$/, "/") : url);
+    const html = await response.text();
+
+    const listBlock = html.match(/<div class="EpisodesList">([\s\S]*?)<\/div>/);
+    if (!listBlock) return JSON.stringify([]);
+
+    const matches = [...listBlock[1].matchAll(/<a[^>]+href="([^"]+)"[^>]*?>[^<]*?الحلقة\s*<em>([^<]+)<\/em>/gi)];
+    const episodes = matches.map(match => ({
+        number: match[2],
+        url: match[1].startsWith("http") ? match[1] : `https://faselhd.cam${match[1]}`
+    }));
+
+    return JSON.stringify(episodes);
 }
 
 async function extractStreamUrl(url) {
