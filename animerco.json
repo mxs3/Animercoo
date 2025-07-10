@@ -11,7 +11,7 @@
     "streamType": "HLS",
     "quality": "1080p",
     "baseUrl": "https://mp4upload.com",
-    "searchBaseUrl": "https://web.animerco.org/?s=%s",
+    "searchBaseUrl": "https://go.animerco.org/?s=%s",
     "scriptUrl": "https://raw.githubusercontent.com/mxs3/Animercoo/refs/heads/main/animerco.js",
     "type": "anime",
     "asyncJS": true
