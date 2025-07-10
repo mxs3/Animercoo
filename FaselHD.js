@@ -1,21 +1,30 @@
-// 1. البحث عن الأنميات/المسلسلات
-async function searchResults(keyword) {
-  const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
-  const html = await (await fetchv2(url)).text();
-  const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
+async function fetchSearch(url) {
+  const res = await fetchv2(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+  });
+  return await res.text();
+}
 
+async function searchResults(keyword) {
+  if (!keyword) return JSON.stringify([]);
+  const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
+  const html = await fetchSearch(url);
+  if (!html.includes('Small--Box')) return JSON.stringify([]);
+
+  const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
   const seen = new Set(), results = [];
   let m;
   while ((m = regex.exec(html)) !== null) {
-    const href = m[1].startsWith('http') ? m[1] : `https://faselhd.cam${m[1]}`;
+    const href = m[1].startsWith('http') ? m[1] : `https://faselhd.cam${m[1].startsWith('/') ? '' : '/'}${m[1]}`;
     if (seen.has(href)) continue;
     seen.add(href);
-
-    const rawTitle = m[3].replace(/<[^>]+>/g, '').trim();
+    const rawTitle = m[3].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     const image = m[2];
     results.push({ title: rawTitle, href, image });
   }
-  return results;
+  return JSON.stringify(results);
 }
 
 // 2. استخراج بيانات الأنمي/المسلسل
