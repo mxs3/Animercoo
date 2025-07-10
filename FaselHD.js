@@ -1,8 +1,9 @@
 async function searchResults(keyword) {
     const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
-    const response = await fetchv2(url);
-    const html = await response.text();
+    const response = await fetchv2(url).catch(() => null);
+    if (!response) return JSON.stringify([]);
 
+    const html = await response.text();
     const results = [];
     const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
 
@@ -31,8 +32,16 @@ async function searchResults(keyword) {
 }
 
 async function extractDetails(url) {
-    const html = await fetchv2(url).then(res => res.text()).catch(() => null);
-    if (!html) return { title: '', description: '', poster: '', year: '', genres: [], type: 'anime' };
+    const response = await fetchv2(url, { redirect: 'follow' }).catch(() => null);
+    if (!response) {
+        console.log(`[Error] Failed to fetch details from ${url}`);
+        return { title: '', description: '', poster: '', year: '', genres: [], type: 'anime' };
+    }
+
+    const html = await response.text();
+    if (!html.includes('<meta')) {
+        console.log(`[Error] No meta tags found in response from ${url}`);
+    }
 
     const title = (html.match(/<meta property="og:title" content="([^"]+)"/) || [])[1] || '';
     const description = (html.match(/<meta name="description" content="([^"]+)"/) || [])[1] || '';
@@ -51,10 +60,17 @@ async function extractDetails(url) {
 }
 
 async function extractEpisodes(url) {
-    const response = await fetchv2(url.replace(/\/watch\/?$/, '/')).catch(() => null);
-    if (!response) return [];
+    const response = await fetchv2(url.replace(/\/watch\/?$/, '/'), { redirect: 'follow' }).catch(() => null);
+    if (!response) {
+        console.log(`[Error] Failed to fetch episodes from ${url}`);
+        return [];
+    }
 
     const html = await response.text();
+    if (!html.includes('الحلقة')) {
+        console.log(`[Error] No episode links found in response from ${url}`);
+    }
+
     const matches = [...html.matchAll(/<a[^>]+href="([^"]+)"[^>]*?>\s*الحلقة\s*<em>(\d+)<\/em>/g)];
     const episodes = [];
 
@@ -68,16 +84,25 @@ async function extractEpisodes(url) {
 }
 
 async function extractStreamUrl(url) {
-    const response = await fetchv2(url).catch(() => null);
-    if (!response) return null;
+    const response = await fetchv2(url, { redirect: 'follow' }).catch(() => null);
+    if (!response) {
+        console.log(`[Error] Failed to fetch stream URL from ${url}`);
+        return null;
+    }
 
     const html = await response.text();
     const iframeMatch = html.match(/data-watch="([^"]+)"/);
-    if (!iframeMatch) return null;
+    if (!iframeMatch) {
+        console.log(`[Error] No iframe found in response from ${url}`);
+        return null;
+    }
 
     const iframeUrl = iframeMatch[1];
-    const iframeRes = await fetchv2(iframeUrl).catch(() => null);
-    if (!iframeRes) return null;
+    const iframeRes = await fetchv2(iframeUrl, { redirect: 'follow' }).catch(() => null);
+    if (!iframeRes) {
+        console.log(`[Error] Failed to fetch iframe from ${iframeUrl}`);
+        return null;
+    }
 
     const iframeHtml = await iframeRes.text();
     const direct = iframeHtml.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
@@ -114,12 +139,16 @@ async function extractStreamUrl(url) {
         }
     }
 
+    console.log(`[Error] No stream URL found in iframe from ${iframeUrl}`);
     return null;
 }
 
 function unpack(source) {
     let { payload, symtab, radix, count } = _filterargs(source);
-    if (count != symtab.length) throw Error("Malformed p.a.c.k.e.r. symtab.");
+    if (count != symtab.length) {
+        console.log('[Error] Malformed p.a.c.k.e.r. symtab.');
+        throw Error("Malformed p.a.c.k.e.r. symtab.");
+    }
     let unbase = new Unbaser(radix);
     function lookup(match) {
         const word = match;
@@ -141,6 +170,7 @@ function unpack(source) {
                 };
             }
         }
+        console.log('[Error] Could not parse p.a.c.k.e.r');
         throw Error("Could not parse p.a.c.k.e.r");
     }
 }
