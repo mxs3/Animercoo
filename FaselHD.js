@@ -1,99 +1,190 @@
 async function searchResults(keyword) {
+    const uniqueResults = new Map();
     const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
-    const response = await fetchv2(url);
-    const html = await response.text();
-    const results = [];
-    const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
+    const res = await fetchv2(url);
+    const html = await res.text();
+
+    const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
+
     let match;
     while ((match = regex.exec(html)) !== null) {
         const href = match[1].startsWith("http") ? match[1] : `https://faselhd.cam${match[1]}`;
-        results.push({
-            title: match[3].replace(/<[^>]+>/g, "").trim(),
-            image: match[2].trim(),
-            href
-        });
+        const image = match[2].trim();
+        const rawTitle = match[3].replace(/<[^>]+>/g, "").trim();
+        const title = rawTitle.replace(/الحلقة\s*\d+.*/gi, '').replace(/والاخيرة/gi, '').trim();
+
+        if (!uniqueResults.has(title)) {
+            uniqueResults.set(title, { title, href, image });
+        }
     }
-    return JSON.stringify(results);
+
+    return JSON.stringify(Array.from(uniqueResults.values()));
 }
 
 async function extractDetails(url) {
-    const response = await fetchv2(url);
-    const html = await response.text();
+    const res = await fetchv2(url);
+    const html = await res.text();
 
-    const title = (html.match(/<h1[^>]*class="Title"[^>]*>(.*?)<\/h1>/i) || [null, null])[1]?.trim() || "";
-    const description = (html.match(/<div class="StoryArea">\s*<p>(.*?)<\/p>/i) || [null, null])[1]?.trim() || "";
-    const year = (html.match(/تاريخ (?:الاصدار|الإصدار)[^<]*?<a[^>]*>(\d{4})<\/a>/i) || [null, null])[1] || "";
-    const poster = (html.match(/<img[^>]+class="imgLoaded"[^>]+src="([^"]+)"/i) || [null, null])[1] || "";
+    const title = (html.match(/<h1[^>]*class="Title"[^>]*>(.*?)<\/h1>/i) || [])[1]?.trim() || 'N/A';
 
-    const genresMatch = html.match(/<div class="Generes[^>]*>[\s\S]*?<ul>([\s\S]*?)<\/ul>/i);
-    const genres = genresMatch ? [...genresMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)].map(m => m[1].trim()) : [];
+    const description = (html.match(/<div class="StoryArea">\s*<p>(.*?)<\/p>/i) || [])[1]
+        ?.replace(/^(?:القصة|القصه)\s*[:：]?\s*/i, "")
+        ?.trim() || 'N/A';
+
+    const year = (html.match(/تاريخ (?:الاصدار|الإصدار)[^<]*?<a[^>]*>(\d{4})<\/a>/i) || [])[1] || 'N/A';
+
+    const poster = (html.match(/<img[^>]+class="imgLoaded"[^>]+src="([^"]+)"/i) || [])[1] || 'N/A';
+
+    const genres = [...(html.match(/<div class="Generes[^>]*>[\s\S]*?<ul>([\s\S]*?)<\/ul>/i)?.[1] || '')
+        .matchAll(/<a[^>]*>([^<]+)<\/a>/g)].map(m => m[1].trim());
+
+    const aliases = [...(html.match(/<ul class="RightTaxContent">([\s\S]*?)<\/ul>/i)?.[1] || '')
+        .matchAll(/<li[^>]*>\s*<span[^>]*>(.*?)<\/span>\s*(.*?)<\/li>/g)]
+        .map(([, label, value]) => {
+            const vals = [...value.matchAll(/<a[^>]*>([^<]+)<\/a>/g)].map(v => v[1]) || [];
+            return `${label.trim()}: ${vals.join(', ')}`;
+        });
 
     return JSON.stringify({
-        title,
-        description,
-        year,
-        poster,
-        genres
+        title, description, year, poster, genres, aliases: aliases.join('\n')
     });
 }
 
 async function extractEpisodes(url) {
-    const response = await fetchv2(url.includes("/watch") ? url.replace(/\/watch\/?$/, "/") : url);
-    const html = await response.text();
+    let res = await fetchv2(url);
+    let html = await res.text();
 
-    const listBlock = html.match(/<div class="EpisodesList">([\s\S]*?)<\/div>/);
-    if (!listBlock) return JSON.stringify([]);
+    if (url.includes("/watch")) {
+        const newUrl = url.replace(/\/watch\/?$/, "/");
+        res = await fetchv2(newUrl);
+        html = await res.text();
+    }
 
-    const matches = [...listBlock[1].matchAll(/<a[^>]+href="([^"]+)"[^>]*?>[^<]*?الحلقة\s*<em>([^<]+)<\/em>/gi)];
-    const episodes = matches.map(match => ({
-        number: match[2],
-        url: match[1].startsWith("http") ? match[1] : `https://faselhd.cam${match[1]}`
-    }));
+    const listMatch = html.match(/<div class="EpisodesList">([\s\S]+?)<\/div>/);
+    if (!listMatch) return JSON.stringify([]);
+
+    const episodes = [];
+    const regex = /<a[^>]+href="([^"]+)"[^>]*>\s*الحلقة\s*<em>([^<]+)<\/em>/g;
+    let match;
+
+    while ((match = regex.exec(listMatch[1])) !== null) {
+        const fullUrl = match[1].startsWith('http') ? match[1] : `https://faselhd.cam${match[1]}`;
+        episodes.push({ number: match[2].trim(), url: fullUrl });
+    }
 
     return JSON.stringify(episodes);
 }
 
 async function extractStreamUrl(url) {
-    const resp = await fetchv2(url);
-    const html = await resp.text();
-    const iframe = html.match(/data-watch="([^"]+)"/);
-    if (!iframe) return null;
-    const res2 = await fetchv2(iframe[1]);
-    const html2 = await res2.text();
-    const direct = html2.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
-    if (direct) return { url: direct[1], type: "mp4", quality: "Auto", headers: { Referer: iframe[1] } };
-    const jw = html2.match(/file:\s*['"]([^'"]+\.mp4[^'"]*)['"]/);
-    if (jw) return { url: jw[1], type: "mp4", quality: "Auto", headers: { Referer: iframe[1] } };
-    const ob = html2.match(/eval\(function\(p,a,c,k,e,d[\s\S]+?\)\)/);
-    if (ob) {
-        const unpacked = unpack(ob[0]);
-        const us = unpacked.match(/file:\s*['"]([^'"]+\.mp4[^'"]*)['"]/);
-        if (us) return { url: us[1], type: "mp4", quality: "Auto", headers: { Referer: iframe[1] } };
+    const response = await fetchv2(url);
+    const html = await response.text();
+    const match = html.match(/data-watch="([^"]+)"/);
+    if (!match) return null;
+
+    const iframeUrl = match[1];
+    const iframeRes = await fetchv2(iframeUrl);
+    const iframeHtml = await iframeRes.text();
+
+    const directSource = iframeHtml.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
+    if (directSource) {
+        return {
+            url: directSource[1],
+            type: "mp4",
+            quality: "Auto",
+            headers: { Referer: iframeUrl }
+        };
     }
+
+    const jwSource = iframeHtml.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
+    if (jwSource) {
+        return {
+            url: jwSource[1],
+            type: "mp4",
+            quality: "Auto",
+            headers: { Referer: iframeUrl }
+        };
+    }
+
+    const obfuscatedScript = iframeHtml.match(/eval\(function\(p,a,c,k,e,d[\s\S]+?\)\)/);
+    if (obfuscatedScript) {
+        const unpacked = unpack(obfuscatedScript[0]);
+        const unpackedSource = unpacked.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
+        if (unpackedSource) {
+            return {
+                url: unpackedSource[1],
+                type: "mp4",
+                quality: "Auto",
+                headers: { Referer: iframeUrl }
+            };
+        }
+    }
+
     return null;
 }
 
 function unpack(source) {
-    const juicer = /}\('(.*)',\s*(\d+),\s*(\d+),\s*'(.*)'\.split\('\|'\)/;
-    const args = juicer.exec(source);
-    const [,payload,radix,count,sym] = args;
-    const symtab = sym.split("|");
-    const unbaser = new Unbaser(parseInt(radix));
-    const lookup = w => symtab[(radix==1?parseInt(w):unbaser.unbase(w))]||w;
-    let s = payload.replace(/\b\w+\b/g,lookup);
-    return s;
+    let { payload, symtab, radix, count } = _filterargs(source);
+    if (count != symtab.length) throw Error("Malformed p.a.c.k.e.r. symtab.");
+    let unbase = new Unbaser(radix);
+    function lookup(match) {
+        const word = match;
+        let word2 = radix == 1 ? symtab[parseInt(word)] : symtab[unbase.unbase(word)];
+        return word2 || word;
+    }
+    source = payload.replace(/\b\w+\b/g, lookup);
+    return _replacestrings(source);
+    function _filterargs(source) {
+        const juicers = [/}\('(.*)', *(\d+|\[\]), *(\d+), *'(.*)'\.split\('\|'\)/];
+        for (const juicer of juicers) {
+            const args = juicer.exec(source);
+            if (args) {
+                return {
+                    payload: args[1],
+                    symtab: args[4].split("|"),
+                    radix: parseInt(args[2]),
+                    count: parseInt(args[3])
+                };
+            }
+        }
+        throw Error("Could not parse p.a.c.k.e.r");
+    }
+    function _replacestrings(source) {
+        return source;
+    }
 }
 
 class Unbaser {
     constructor(base) {
-        this.ALPHABET = {62:"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"};
+        this.ALPHABET = {
+            62: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            95: "' !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'"
+        };
+        this.dictionary = {};
         this.base = base;
-        if (base>36 && base<62) this.ALPHABET[base] = this.ALPHABET[62].substr(0,base);
-        if (base<=36) this.unbase = v=>parseInt(v,base);
-        else {
-            this.dict={};
-            [...this.ALPHABET[base]].forEach((c,i)=>this.dict[c]=i);
-            this.unbase = w=>[...w].reverse().reduce((p,c,i)=>p+this.dict[c]*Math.pow(this.base,i),0);
+
+        if (36 < base && base < 62) {
+            this.ALPHABET[base] = this.ALPHABET[base] || this.ALPHABET[62].substr(0, base);
         }
+
+        if (2 <= base && base <= 36) {
+            this.unbase = (value) => parseInt(value, base);
+        } else {
+            try {
+                [...this.ALPHABET[base]].forEach((cipher, index) => {
+                    this.dictionary[cipher] = index;
+                });
+            } catch (er) {
+                throw Error("Unsupported base encoding.");
+            }
+            this.unbase = this._dictunbaser;
+        }
+    }
+
+    _dictunbaser(value) {
+        let ret = 0;
+        [...value].reverse().forEach((cipher, index) => {
+            ret += Math.pow(this.base, index) * this.dictionary[cipher];
+        });
+        return ret;
     }
 }
