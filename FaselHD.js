@@ -1,199 +1,101 @@
-async function searchResults(keyword) {
-    const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
-    const response = await fetchv2(url).catch(() => null);
-    if (!response) return JSON.stringify([]);
-
-    const html = await response.text();
+async function searchResults(html) {
     const results = [];
-    const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
-
+    const regex = /<div class="AnimationBox">.*?<a href="(.*?)".*?<div class="Title">(.*?)<\/div>/gs;
     let match;
     while ((match = regex.exec(html)) !== null) {
-        const href = match[1].startsWith("http") ? match[1] : `https://faselhd.cam${match[1]}`;
-        const image = match[2];
-        const rawTitle = match[3].replace(/<[^>]+>/g, "").trim();
-
-        const cleanedTitle = rawTitle
-            .replace(/الحلقة\s*\d+(\.\d+)?(-\d+)?/gi, '')
-            .replace(/والاخيرة/gi, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-        if (!results.some(item => item.title === cleanedTitle)) {
-            results.push({
-                title: cleanedTitle,
-                image,
-                href
-            });
-        }
+        results.push({
+            title: match[2].trim(),
+            url: match[1],
+        });
     }
-
-    return JSON.stringify(results);
+    return results;
 }
 
 async function extractDetails(url) {
-    const response = await fetchv2(url, { redirect: 'follow' }).catch(() => null);
-    if (!response) {
-        console.log(`[Error] Failed to fetch details from ${url}`);
-        return { title: '', description: '', poster: '', year: '', genres: [], type: 'anime' };
-    }
+    const res = await fetch(url);
+    const html = await res.text();
 
-    const html = await response.text();
-    if (!html.includes('<meta')) {
-        console.log(`[Error] No meta tags found in response from ${url}`);
-    }
+    const titleMatch = html.match(/<h1[^>]*class="entry-title"[^>]*>(.*?)<\/h1>/);
+    const title = titleMatch ? titleMatch[1].trim() : null;
 
-    const title = (html.match(/<meta property="og:title" content="([^"]+)"/) || [])[1] || '';
-    const description = (html.match(/<meta name="description" content="([^"]+)"/) || [])[1] || '';
-    const poster = (html.match(/<meta property="og:image" content="([^"]+)"/) || [])[1] || '';
-    const year = (html.match(/article:published_time[^"]*"content":"(\d{4})/) || [])[1] || '';
-    const genres = [...html.matchAll(/genre\/([^/]+)\//g)].map(g => decodeURIComponent(g[1]));
+    const descMatch = html.match(/<meta name="description" content="(.*?)"/);
+    const description = descMatch ? descMatch[1].trim() : null;
+
+    const genres = [];
+    const genreRegex = /<li class="genre">(.*?)<\/li>/g;
+    let genreMatch;
+    while ((genreMatch = genreRegex.exec(html)) !== null) {
+        genres.push(genreMatch[1].trim());
+    }
 
     return {
         title,
         description,
-        poster,
-        year,
         genres,
-        type: 'anime'
+        url,
     };
 }
 
-async function extractEpisodes(url) {
-    const response = await fetchv2(url.replace(/\/watch\/?$/, '/'), { redirect: 'follow' }).catch(() => null);
-    if (!response) {
-        console.log(`[Error] Failed to fetch episodes from ${url}`);
-        return [];
-    }
-
-    const html = await response.text();
-    if (!html.includes('الحلقة')) {
-        console.log(`[Error] No episode links found in response from ${url}`);
-    }
-
-    const matches = [...html.matchAll(/<a[^>]+href="([^"]+)"[^>]*?>\s*الحلقة\s*<em>(\d+)<\/em>/g)];
+async function extractEpisodes(html, url) {
     const episodes = [];
+    const base = url.split("/").slice(0, 3).join("/");
 
-    for (const match of matches) {
-        const href = match[1].startsWith("http") ? match[1] : `https://faselhd.cam${match[1]}`;
-        const number = match[2];
-        episodes.push({ url: href, number });
+    const listMatch = html.match(/<div class="EpisAs">(.*?)<\/div>\s*<\/div>/s);
+    if (!listMatch) return [];
+
+    const listHtml = listMatch[1];
+    const regex = /<a[^>]*href="(.*?)"[^>]*>(.*?)<\/a>/g;
+    let match;
+    while ((match = regex.exec(listHtml)) !== null) {
+        episodes.push({
+            title: match[2].trim(),
+            url: match[1].startsWith("http") ? match[1] : base + match[1],
+        });
     }
-
     return episodes;
 }
 
 async function extractStreamUrl(url) {
-    const response = await fetchv2(url, { redirect: 'follow' }).catch(() => null);
-    if (!response) {
-        console.log(`[Error] Failed to fetch stream URL from ${url}`);
-        return null;
+    const res = await fetch(url);
+    const html = await res.text();
+
+    const watchBtnMatch = html.match(/<a[^>]*class="watchBTN"[^>]*href="([^"]+)"/);
+    if (!watchBtnMatch) return [];
+
+    const watchUrl = new URL(watchBtnMatch[1], url).href;
+    const watchRes = await fetch(watchUrl);
+    const watchHtml = await watchRes.text();
+
+    const iframeMatch = watchHtml.match(/<iframe[^>]*src="([^"]+)"/);
+    if (iframeMatch) {
+        return [{ url: iframeMatch[1] }];
     }
 
-    const html = await response.text();
-    const iframeMatch = html.match(/data-watch="([^"]+)"/);
-    if (!iframeMatch) {
-        console.log(`[Error] No iframe found in response from ${url}`);
-        return null;
-    }
-
-    const iframeUrl = iframeMatch[1];
-    const iframeRes = await fetchv2(iframeUrl, { redirect: 'follow' }).catch(() => null);
-    if (!iframeRes) {
-        console.log(`[Error] Failed to fetch iframe from ${iframeUrl}`);
-        return null;
-    }
-
-    const iframeHtml = await iframeRes.text();
-    const direct = iframeHtml.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
-    if (direct) {
-        return {
-            url: direct[1],
-            type: "mp4",
-            quality: "Auto",
-            headers: { Referer: iframeUrl }
-        };
-    }
-
-    const jw = iframeHtml.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
-    if (jw) {
-        return {
-            url: jw[1],
-            type: "mp4",
-            quality: "Auto",
-            headers: { Referer: iframeUrl }
-        };
-    }
-
-    const obfuscated = iframeHtml.match(/eval\(function\(p,a,c,k,e,d[\s\S]+?\)\)/);
-    if (obfuscated) {
-        const unpacked = unpack(obfuscated[0]);
-        const final = unpacked.match(/file:\s*["']([^"']+\.mp4[^"']*)["']/);
-        if (final) {
-            return {
-                url: final[1],
-                type: "mp4",
-                quality: "Auto",
-                headers: { Referer: iframeUrl }
-            };
+    const evalMatch = watchHtml.match(/eval\(function\(p,a,c,k,e,d\).*?\)/s);
+    if (evalMatch) {
+        const unpacked = unpack(evalMatch[0]);
+        const srcMatch = unpacked.match(/src=['"]([^'"]+)['"]/);
+        if (srcMatch) {
+            return [{ url: srcMatch[1] }];
         }
     }
 
-    console.log(`[Error] No stream URL found in iframe from ${iframeUrl}`);
-    return null;
+    return [];
 }
 
-function unpack(source) {
-    let { payload, symtab, radix, count } = _filterargs(source);
-    if (count != symtab.length) {
-        console.log('[Error] Malformed p.a.c.k.e.r. symtab.');
-        throw Error("Malformed p.a.c.k.e.r. symtab.");
-    }
-    let unbase = new Unbaser(radix);
-    function lookup(match) {
-        const word = match;
-        let word2 = radix == 1 ? symtab[parseInt(word)] : symtab[unbase.unbase(word)];
-        return word2 || word;
-    }
-    source = payload.replace(/\b\w+\b/g, lookup);
-    return source;
-    function _filterargs(source) {
-        const juicers = [/}\('(.*)', *(\d+), *(\d+), *'(.*)'\.split\('\|'\)/];
-        for (const juicer of juicers) {
-            const args = juicer.exec(source);
-            if (args) {
-                return {
-                    payload: args[1],
-                    radix: parseInt(args[2]),
-                    count: parseInt(args[3]),
-                    symtab: args[4].split("|")
-                };
+function unpack(packed) {
+    function evalInSandbox(p, a, c, k, e, d) {
+        while (c--) {
+            if (k[c]) {
+                p = p.replace(new RegExp('\\b' + c.toString(a) + '\\b', 'g'), k[c]);
             }
         }
-        console.log('[Error] Could not parse p.a.c.k.e.r');
-        throw Error("Could not parse p.a.c.k.e.r");
+        return p;
     }
-}
-
-class Unbaser {
-    constructor(base) {
-        this.ALPHABET = {
-            62: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        };
-        this.dictionary = {};
-        this.base = base;
-        if (2 <= base && base <= 36) {
-            this.unbase = (value) => parseInt(value, base);
-        } else {
-            [...this.ALPHABET[base]].forEach((c, i) => this.dictionary[c] = i);
-            this.unbase = this._dictunbaser;
-        }
-    }
-    _dictunbaser(value) {
-        let ret = 0;
-        [...value].reverse().forEach((c, i) => {
-            ret += Math.pow(this.base, i) * this.dictionary[c];
-        });
-        return ret;
-    }
+    const pattern = /eval\(function\(p,a,c,k,e,(?:r|d)\)\{.*?\}\((.*?)\)\)/s;
+    const argsMatch = packed.match(pattern);
+    if (!argsMatch) return '';
+    const argsRaw = `[${argsMatch[1]}]`;
+    const args = eval(argsRaw);
+    return evalInSandbox(...args);
 }
