@@ -31,8 +31,8 @@ async function searchResults(keyword) {
 }
 
 async function extractDetails(url) {
-    const res = await fetchv2(url);
-    const html = await res.text();
+    const html = await fetchv2(url).then(res => res.text()).catch(() => null);
+    if (!html) return { title: '', description: '', poster: '', year: '', genres: [], type: 'anime' };
 
     const title = (html.match(/<meta property="og:title" content="([^"]+)"/) || [])[1] || '';
     const description = (html.match(/<meta name="description" content="([^"]+)"/) || [])[1] || '';
@@ -51,9 +51,10 @@ async function extractDetails(url) {
 }
 
 async function extractEpisodes(url) {
-    const response = await fetchv2(url.replace(/\/watch\/?$/, '/'));
-    const html = await response.text();
+    const response = await fetchv2(url.replace(/\/watch\/?$/, '/')).catch(() => null);
+    if (!response) return [];
 
+    const html = await response.text();
     const matches = [...html.matchAll(/<a[^>]+href="([^"]+)"[^>]*?>\s*الحلقة\s*<em>(\d+)<\/em>/g)];
     const episodes = [];
 
@@ -67,16 +68,18 @@ async function extractEpisodes(url) {
 }
 
 async function extractStreamUrl(url) {
-    const response = await fetchv2(url);
-    const html = await response.text();
+    const response = await fetchv2(url).catch(() => null);
+    if (!response) return null;
 
+    const html = await response.text();
     const iframeMatch = html.match(/data-watch="([^"]+)"/);
     if (!iframeMatch) return null;
 
     const iframeUrl = iframeMatch[1];
-    const iframeRes = await fetchv2(iframeUrl);
-    const iframeHtml = await iframeRes.text();
+    const iframeRes = await fetchv2(iframeUrl).catch(() => null);
+    if (!iframeRes) return null;
 
+    const iframeHtml = await iframeRes.text();
     const direct = iframeHtml.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/);
     if (direct) {
         return {
