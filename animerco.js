@@ -1,17 +1,3 @@
-async function fetchv2(url, headers = {}, method = "GET", body = null) {
-    const options = { method, headers };
-    if (method === "POST" && body) {
-        headers['Content-Type'] = 'application/x-www-form-urlencoded';
-        options.body = body;
-    }
-    return await fetch(url, options);
-}
-
-function decodeHTMLEntities(text) {
-    const txt = document.createElement('textarea');
-    txt.innerHTML = text;
-    return txt.value;
-}
 async function searchResults(keyword) {
     try {
         const encodedKeyword = encodeURIComponent(keyword);
@@ -31,13 +17,14 @@ async function searchResults(keyword) {
             results.push({ title, href, image });
         }
 
+        console.log(results);
         return JSON.stringify(results);
     } catch (error) {
         console.log('Fetch error in searchResults:', error);
         return JSON.stringify([{ title: 'Error', image: '', href: '' }]);
     }
 }
-
+    
 async function extractDetails(url) {
     try {
         const response = await fetchv2(url);
@@ -147,7 +134,7 @@ async function extractEpisodes(url) {
 }
 
 async function extractStreamUrl(url) {
-    if (typeof _0xCheck === "function" && !_0xCheck()) return 'https://files.catbox.moe/avolvc.mp4';
+    if (!_0xCheck()) return 'https://files.catbox.moe/avolvc.mp4';
 
     const multiStreams = {
         streams: [],
@@ -155,6 +142,7 @@ async function extractStreamUrl(url) {
     };
 
     try {
+        console.log("Page URL received:", url);
         const res = await fetchv2(url);
         const html = await res.text();
         const method = 'POST';
@@ -174,7 +162,7 @@ async function extractStreamUrl(url) {
                 const body = `action=player_ajax&post=${post}&nume=${nume}&type=${type}`;
                 const headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
-                    'Origin': 'https://go.animerco.org',
+                    'Origin': 'https://web.animerco.org',
                     'Referer': url,
                 };
 
@@ -208,14 +196,28 @@ async function extractStreamUrl(url) {
                                 headers: streamData.headers,
                                 subtitles: null
                             });
+                            console.log(`Successfully extracted ${server} stream: ${streamData.url}`);
+                        } else {
+                            console.log(`No stream URL found for ${server}`);
                         }
-                    } catch (_) {}
-                } catch (_) {}
+                    } catch (extractorError) {
+                        console.error(`Extractor error for ${server}:`, extractorError);
+                    }
+                } catch (error) {
+                    console.error(`Error processing ${server}:`, error);
+                }
             }
         }
 
+        if (multiStreams.streams.length === 0) {
+            console.error("No valid streams were extracted from any provider");
+            return JSON.stringify({ streams: [], subtitles: null });
+        }
+
+        console.log(`Extracted ${multiStreams.streams.length} streams`);
         return JSON.stringify(multiStreams);
-    } catch (_) {
+    } catch (error) {
+        console.error("Error in extractStreamUrl:", error);
         return JSON.stringify({ streams: [], subtitles: null });
     }
 }
@@ -463,3 +465,4 @@ function unpack(source) {
     function _replacestrings(source) {
         return source;
     }
+}
