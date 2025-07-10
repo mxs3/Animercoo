@@ -11,13 +11,13 @@ async function searchResults(keyword) {
   if (!keyword) return JSON.stringify([]);
   const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
   const html = await fetchSearch(url);
-  if (!html.includes('Small--Box')) return JSON.stringify([]);
+  if (!html.includes('Small')) return JSON.stringify([]);
 
-  const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
+  const regex = /<a\s+href="([^"]+)"[^>]*>\s*<div[^>]*class="poster"[^>]*>[\s\S]*?data-src="([^"]+)"[\s\S]*?<h3[^>]*>(.*?)<\/h3>/g;
   const seen = new Set(), results = [];
   let m;
   while ((m = regex.exec(html)) !== null) {
-    const href = m[1].startsWith('http') ? m[1] : `https://faselhd.cam${m[1].startsWith('/') ? '' : '/'}${m[1]}`;
+    const href = m[1].startsWith('http') ? m[1] : `https://faselhd.cam${m[1]}`;
     if (seen.has(href)) continue;
     seen.add(href);
     const rawTitle = m[3].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
