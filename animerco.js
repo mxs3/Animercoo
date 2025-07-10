@@ -1,3 +1,17 @@
+async function fetchv2(url, headers = {}, method = "GET", body = null) {
+    const options = { method, headers };
+    if (method === "POST" && body) {
+        headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        options.body = body;
+    }
+    return await fetch(url, options);
+}
+
+function decodeHTMLEntities(text) {
+    const txt = document.createElement('textarea');
+    txt.innerHTML = text;
+    return txt.value;
+}
 async function searchResults(keyword) {
     try {
         const encodedKeyword = encodeURIComponent(keyword);
