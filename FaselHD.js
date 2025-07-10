@@ -1,28 +1,18 @@
-async function fetchSearch(url) {
-  const res = await fetchv2(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-      'Referer': 'https://faselhd.cam/',
-      'Accept': 'text/html'
-    }
-  });
-  return await res.text();
-}
-
 async function searchResults(keyword) {
   const url = `https://faselhd.cam/?s=${encodeURIComponent(keyword)}`;
-  const html = await fetchSearch(url);
+  const html = await (await fetchv2(url)).text();
+  const regex = /<div class="Small--Box">[\s\S]*?<a\s+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[^>]*>[\s\S]*?<h3 class="title">([\s\S]*?)<\/h3>/g;
 
-  const regex = /<div class="Small--Box">[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>[\s\S]*?data-src="([^"]+)"[\s\S]*?<h3 class="title">([^<]+)<\/h3>/g;
-  const results = [], seen = new Set();
-  let match;
-  while ((match = regex.exec(html)) !== null) {
-    const href = match[1].startsWith('http') ? match[1] : `https://faselhd.cam${match[1]}`;
+  const seen = new Set(), results = [];
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    const href = m[1].startsWith('http') ? m[1] : `https://faselhd.cam${m[1]}`;
     if (seen.has(href)) continue;
     seen.add(href);
-    const image = match[2];
-    const title = match[3].trim();
-    results.push({ title, href, image });
+
+    const rawTitle = m[3].replace(/<[^>]+>/g, '').trim();
+    const image = m[2];
+    results.push({ title: rawTitle, href, image });
   }
   return results;
 }
