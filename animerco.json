@@ -10,7 +10,7 @@
     "language": "Arabic (SUB)",
     "streamType": "HLS, MP4",
     "quality": "auto",
-    "baseUrl": "https://uqload.cc",
+    "baseUrl": "https://mp4upload.com",
     "searchBaseUrl": "https://go.animerco.org/?s=%s",
     "scriptUrl": "https://raw.githubusercontent.com/mxs3/Animercoo/refs/heads/main/animerco.js",
     "type": "anime",
