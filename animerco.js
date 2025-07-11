@@ -136,10 +136,7 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(url) {
     if (!_0xCheck()) return 'https://files.catbox.moe/avolvc.mp4';
 
-    const multiStreams = {
-        streams: [],
-        subtitles: null
-    };
+    const multiStreams = { streams: [], subtitles: null };
 
     try {
         const res = await fetchv2(url);
@@ -160,7 +157,7 @@ async function extractStreamUrl(url) {
                 const [_, type, post, nume] = match;
                 const body = `action=player_ajax&post=${post}&nume=${nume}&type=${type}`;
                 const headers = {
-                    'User-Agent': 'Mozilla/5.0',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
                     'Origin': 'https://web.animerco.org',
                     'Referer': url,
                 };
@@ -168,6 +165,7 @@ async function extractStreamUrl(url) {
                 try {
                     const response = await fetchv2("https://go.animerco.org/wp-admin/admin-ajax.php", headers, method, body);
                     const json = await response.json();
+
                     if (!json?.embed_url) continue;
 
                     let streamData;
@@ -194,16 +192,14 @@ async function extractStreamUrl(url) {
                             subtitles: null
                         });
                     }
-                } catch (error) {}
+                } catch (e) {
+                    continue;
+                }
             }
         }
 
-        if (multiStreams.streams.length === 0) {
-            return JSON.stringify({ streams: [], subtitles: null });
-        }
-
         return JSON.stringify(multiStreams);
-    } catch (error) {
+    } catch (e) {
         return JSON.stringify({ streams: [], subtitles: null });
     }
 }
@@ -221,9 +217,12 @@ function _0x7E9A(_){return((___,____,_____,______,_______,________,_________,___
 async function mp4Extractor(url) {
     const headers = { "Referer": "https://mp4upload.com" };
     const response = await fetchv2(url, headers);
-    const htmlText = await response.text();
-    const streamUrl = extractMp4Script(htmlText);
-    return { url: streamUrl, headers };
+    const html = await response.text();
+    const streamUrl = extractMp4Script(html);
+    return {
+        url: streamUrl,
+        headers: headers
+    };
 }
 
 function extractMp4Script(htmlText) {
@@ -247,7 +246,10 @@ async function youruploadExtractor(embedUrl) {
     const response = await fetchv2(embedUrl, headers);
     const html = await response.text();
     const match = html.match(/file:\s*['"]([^'"]+\.mp4)['"]/);
-    return { url: match?.[1] || null, headers };
+    return {
+        url: match?.[1] || null,
+        headers: headers
+    };
 }
 
 async function uqloadExtractor(embedUrl) {
@@ -256,20 +258,24 @@ async function uqloadExtractor(embedUrl) {
         "Origin": "https://uqload.net"
     };
     const response = await fetchv2(embedUrl, headers);
-    const htmlText = await response.text();
-    const match = htmlText.match(/sources:\s*\[\s*"([^"]+\.mp4)"\s*\]/);
-    return { url: match ? match[1] : '', headers };
+    const html = await response.text();
+    const match = html.match(/sources:\s*\[\s*"([^"]+\.mp4)"\s*\]/);
+    return {
+        url: match ? match[1] : '',
+        headers: headers
+    };
 }
 
 async function vkExtractor(embedUrl) {
     const headers = { "Referer": embedUrl };
     const response = await fetchv2(embedUrl, headers);
     const html = await response.text();
-    const matches = [...html.matchAll(/"url(\d+)"\s*:\s*"([^"]+)"/g)];
+
+    const matches = [...html.matchAll(/"url(\d+)":"(https:[^"]+)"/g)];
     const streams = matches.map(match => ({
         title: `vk - ${match[1]}p`,
-        streamUrl: match[2],
-        headers,
+        streamUrl: match[2].replace(/\\\//g, "/"),
+        headers: headers,
         subtitles: null
     }));
     return streams;
