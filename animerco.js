@@ -136,7 +136,10 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(url) {
     if (!_0xCheck()) return 'https://files.catbox.moe/avolvc.mp4';
 
-    const multiStreams = { streams: [], subtitles: null };
+    const multiStreams = {
+        streams: [],
+        subtitles: null
+    };
 
     try {
         const res = await fetchv2(url);
@@ -170,36 +173,36 @@ async function extractStreamUrl(url) {
 
                     let streamData;
 
-                    if (server === 'vk') {
-                        streamData = await vkExtractor(json.embed_url);
-                    } else if (server === 'mp4upload') {
-                        streamData = await mp4Extractor(json.embed_url);
-                    } else if (server === 'yourupload') {
-                        streamData = await youruploadExtractor(json.embed_url);
-                    } else if (server === 'uqload') {
-                        streamData = await uqloadExtractor(json.embed_url);
-                    }
-
-                    if (Array.isArray(streamData)) {
-                        for (const s of streamData) {
-                            multiStreams.streams.push(s);
+                    try {
+                        if (server === 'vk') {
+                            streamData = await vkExtractor(json.embed_url);
+                        } else if (server === 'mp4upload') {
+                            streamData = await mp4Extractor(json.embed_url);
+                        } else if (server === 'yourupload') {
+                            streamData = await youruploadExtractor(json.embed_url);
+                        } else if (server === 'uqload') {
+                            streamData = await uqloadExtractor(json.embed_url);
                         }
-                    } else if (streamData?.url) {
-                        multiStreams.streams.push({
-                            title: server,
-                            streamUrl: streamData.url,
-                            headers: streamData.headers,
-                            subtitles: null
-                        });
-                    }
-                } catch (e) {
-                    continue;
-                }
+
+                        if (Array.isArray(streamData)) {
+                            for (const s of streamData) {
+                                multiStreams.streams.push(s);
+                            }
+                        } else if (streamData?.url) {
+                            multiStreams.streams.push({
+                                title: server,
+                                streamUrl: streamData.url,
+                                headers: streamData.headers,
+                                subtitles: null
+                            });
+                        }
+                    } catch (extractorError) {}
+                } catch (error) {}
             }
         }
 
         return JSON.stringify(multiStreams);
-    } catch (e) {
+    } catch (error) {
         return JSON.stringify({ streams: [], subtitles: null });
     }
 }
@@ -214,11 +217,37 @@ function _0xCheck() {
 
 function _0x7E9A(_){return((___,____,_____,______,_______,________,_________,__________,___________,____________)=>(____=typeof ___,_____=___&&___[String.fromCharCode(...[108,101,110,103,116,104])],______=[...String.fromCharCode(...[99,114,97,110,99,105])],_______=___?[...___[String.fromCharCode(...[116,111,76,111,119,101,114,67,97,115,101])]()]:[],(________=______[String.fromCharCode(...[115,108,105,99,101])]())&&_______[String.fromCharCode(...[102,111,114,69,97,99,104])]((_________,__________)=>(___________=________[String.fromCharCode(...[105,110,100,101,120,79,102])](_________))>=0&&________[String.fromCharCode(...[115,112,108,105,99,101])](___________,1)),____===String.fromCharCode(...[115,116,114,105,110,103])&&_____===16&&________[String.fromCharCode(...[108,101,110,103,116,104])]===0))(_)}
 
+async function uqloadExtractor(embedUrl) {
+    const headers = {
+        "Referer": embedUrl,
+        "Origin": "https://uqload.net"
+    };
+    const response = await fetchv2(embedUrl, headers);
+    const htmlText = await response.text();
+    const match = htmlText.match(/sources:\s*\[\s*"([^"]+\.mp4)"\s*\]/);
+    const videoSrc = match ? match[1] : '';
+    return {
+        url: videoSrc,
+        headers: headers
+    };
+}
+
+async function youruploadExtractor(embedUrl) {
+    const headers = { "Referer": "https://www.yourupload.com/" };
+    const response = await fetchv2(embedUrl, headers);
+    const html = await response.text();
+    const match = html.match(/file:\s*['"]([^'"]+\.mp4)['"]/);
+    return {
+        url: match?.[1] || null,
+        headers: headers
+    };
+}
+
 async function mp4Extractor(url) {
     const headers = { "Referer": "https://mp4upload.com" };
     const response = await fetchv2(url, headers);
-    const html = await response.text();
-    const streamUrl = extractMp4Script(html);
+    const htmlText = await response.text();
+    const streamUrl = extractMp4Script(htmlText);
     return {
         url: streamUrl,
         headers: headers
@@ -241,44 +270,21 @@ function extractScriptTags(html) {
     return scripts;
 }
 
-async function youruploadExtractor(embedUrl) {
-    const headers = { "Referer": "https://www.yourupload.com/" };
-    const response = await fetchv2(embedUrl, headers);
-    const html = await response.text();
-    const match = html.match(/file:\s*['"]([^'"]+\.mp4)['"]/);
-    return {
-        url: match?.[1] || null,
-        headers: headers
-    };
-}
-
-async function uqloadExtractor(embedUrl) {
-    const headers = {
-        "Referer": embedUrl,
-        "Origin": "https://uqload.net"
-    };
-    const response = await fetchv2(embedUrl, headers);
-    const html = await response.text();
-    const match = html.match(/sources:\s*\[\s*"([^"]+\.mp4)"\s*\]/);
-    return {
-        url: match ? match[1] : '',
-        headers: headers
-    };
-}
-
 async function vkExtractor(embedUrl) {
-    const headers = { "Referer": embedUrl };
-    const response = await fetchv2(embedUrl, headers);
-    const html = await response.text();
-
+    const headers = {
+        'Referer': embedUrl,
+        'User-Agent': 'Mozilla/5.0'
+    };
+    const res = await fetchv2(embedUrl, headers);
+    const html = await res.text();
     const matches = [...html.matchAll(/"url(\d+)":"(https:[^"]+)"/g)];
-    const streams = matches.map(match => ({
-        title: `vk - ${match[1]}p`,
-        streamUrl: match[2].replace(/\\\//g, "/"),
+    const qualities = matches.map(m => ({
+        title: `vk (${m[1]}p)`,
+        streamUrl: m[2].replace(/\\\//g, '/'),
         headers: headers,
         subtitles: null
     }));
-    return streams;
+    return qualities;
 }
 
 function extractMp4Script(htmlText) {
