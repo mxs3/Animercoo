@@ -220,7 +220,20 @@ async function extractStreamUrl(url) {
             console.error("No valid streams were extracted from any provider");
             return JSON.stringify({ streams: [], subtitles: null });
         }
+if (multiStreams.streams.length === 0) {
+    console.error("No valid streams were extracted from any provider");
+    return JSON.stringify({ streams: [], subtitles: null });
+}
 
+// ✅ نخلي VK يظهر أول واحد
+multiStreams.streams.sort((a, b) => {
+    if (a.title.toLowerCase().startsWith("vk")) return -1;
+    if (b.title.toLowerCase().startsWith("vk")) return 1;
+    return 0;
+});
+
+console.log(`Extracted ${multiStreams.streams.length} streams`);
+return JSON.stringify(multiStreams);
         console.log(`Extracted ${multiStreams.streams.length} streams`);
         return JSON.stringify(multiStreams);
     } catch (error) {
