@@ -6,9 +6,9 @@
         "icon": "https://avatars.githubusercontent.com/u/212196142?s=400&u=2456ce4be2bf64074bcf483622cfe726970025fe&v=4",
         "url": "https://github.com/mxs3"
     },
-    "version": "1.5.6",
+    "version": "1.5.7",
     "language": "Arabic (SUB)",
-    "streamType": "auto",
+    "streamType": "HLS, MP4",
     "quality": "auto",
     "baseUrl": "https://mp4upload.com",
     "searchBaseUrl": "https://go.animerco.org/?s=%s",
