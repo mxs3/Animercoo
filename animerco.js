@@ -147,8 +147,9 @@ async function extractStreamUrl(url) {
         const html = await res.text();
         const method = 'POST';
 
-        const servers = ['mp4upload', 'yourupload', 'streamwish', 'sfastwish', 'sibnet', 'uqload'];
-        
+        // خلى vk أول واحد علشان يبقى هو الأساسي
+        const servers = ['vk', 'mp4upload', 'yourupload', 'streamwish', 'sfastwish', 'sibnet', 'uqload'];
+
         for (const server of servers) {
             const regex = new RegExp(
                 `<a[^>]+class=['"][^'"]*option[^'"]*['"][^>]+data-type=['"]([^'"]+)['"][^>]+data-post=['"]([^'"]+)['"][^>]+data-nume=['"]([^'"]+)['"][^>]*>(?:(?!<span[^>]*class=['"]server['"]>).)*<span[^>]*class=['"]server['"]>\\s*${server}\\s*<\\/span>`,
@@ -156,12 +157,12 @@ async function extractStreamUrl(url) {
             );
 
             const matches = [...html.matchAll(regex)];
-            
+
             for (const match of matches) {
                 const [_, type, post, nume] = match;
                 const body = `action=player_ajax&post=${post}&nume=${nume}&type=${type}`;
                 const headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
                     'Origin': 'https://web.animerco.org',
                     'Referer': url,
                 };
@@ -176,8 +177,11 @@ async function extractStreamUrl(url) {
                     }
 
                     let streamData;
+
                     try {
-                        if (server === 'mp4upload') {
+                        if (server === 'vk') {
+                            streamData = await vkExtractor(json.embed_url);
+                        } else if (server === 'mp4upload') {
                             streamData = await mp4Extractor(json.embed_url);
                         } else if (server === 'yourupload') {
                             streamData = await youruploadExtractor(json.embed_url);
@@ -189,14 +193,17 @@ async function extractStreamUrl(url) {
                             streamData = await uqloadExtractor(json.embed_url);
                         }
 
-                        if (streamData?.url) {
+                        if (Array.isArray(streamData)) {
+                            for (const s of streamData) {
+                                multiStreams.streams.push(s);
+                            }
+                        } else if (streamData?.url) {
                             multiStreams.streams.push({
                                 title: server,
                                 streamUrl: streamData.url,
                                 headers: streamData.headers,
                                 subtitles: null
                             });
-                            console.log(`Successfully extracted ${server} stream: ${streamData.url}`);
                         } else {
                             console.log(`No stream URL found for ${server}`);
                         }
