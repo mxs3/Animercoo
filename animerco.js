@@ -142,12 +142,11 @@ async function extractStreamUrl(url) {
     };
 
     try {
-        console.log("Page URL received:", url);
         const res = await fetchv2(url);
         const html = await res.text();
         const method = 'POST';
 
-        const servers = ['mp4upload', 'uqload', 'vk'];
+        const servers = ['vk', 'mp4upload', 'uqload'];
 
         for (const server of servers) {
             const regex = new RegExp(
@@ -170,57 +169,34 @@ async function extractStreamUrl(url) {
                     const response = await fetchv2("https://go.animerco.org/wp-admin/admin-ajax.php", headers, method, body);
                     const json = await response.json();
 
-                    if (!json?.embed_url) {
-                        console.log(`No embed URL found for ${server}`);
-                        continue;
-                    }
+                    if (!json?.embed_url) continue;
 
                     let streamData;
-                    try {
-                        if (server === 'mp4upload') {
-                            streamData = await mp4Extractor(json.embed_url);
-                            if (streamData?.url) {
-                                multiStreams.streams.push({
-                                    title: 'mp4upload',
-                                    streamUrl: streamData.url,
-                                    headers: streamData.headers,
-                                    subtitles: null
-                                });
-                            }
-                        } else if (server === 'uqload') {
-                            streamData = await uqloadExtractor(json.embed_url);
-                            if (streamData?.url) {
-                                multiStreams.streams.push({
-                                    title: 'uqload',
-                                    streamUrl: streamData.url,
-                                    headers: streamData.headers,
-                                    subtitles: null
-                                });
-                            }
-                        } else if (server === 'vk') {
-                            const vkStreams = await vkExtractor(json.embed_url);
-                            if (Array.isArray(vkStreams)) {
-                                multiStreams.streams.push(...vkStreams);
-                            }
-                        }
-                    } catch (extractorError) {
-                        console.error(`Extractor error for ${server}:`, extractorError);
+                    if (server === 'vk') {
+                        streamData = await vkExtractor(json.embed_url);
+                    } else if (server === 'mp4upload') {
+                        streamData = await mp4Extractor(json.embed_url);
+                    } else if (server === 'uqload') {
+                        streamData = await uqloadExtractor(json.embed_url);
                     }
-                } catch (error) {
-                    console.error(`Error processing ${server}:`, error);
+
+                    if (streamData?.url) {
+                        multiStreams.streams.push({
+                            title: server,
+                            streamUrl: streamData.url,
+                            headers: streamData.headers,
+                            subtitles: null
+                        });
+                    }
+                } catch (e) {
+                    console.error(`Error extracting ${server}:`, e);
                 }
             }
         }
 
-        if (multiStreams.streams.length === 0) {
-            console.error("No valid streams were extracted from any provider");
-            return JSON.stringify({ streams: [], subtitles: null });
-        }
-
-        console.log(`Extracted ${multiStreams.streams.length} streams`);
         return JSON.stringify(multiStreams);
-    } catch (error) {
-        console.error("Error in extractStreamUrl:", error);
+    } catch (e) {
+        console.error("extractStreamUrl error:", e);
         return JSON.stringify({ streams: [], subtitles: null });
     }
 }
@@ -246,6 +222,40 @@ function _0x7E9A(_) {
         (_)
 }
 
+async function vkExtractor(embedUrl) {
+    const headers = {
+        "Referer": "https://vk.com",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
+    };
+
+    try {
+        const response = await fetchv2(embedUrl, headers);
+        const html = await response.text();
+
+        const m3u8Match = html.match(/"(https:\/\/[^"]+\.m3u8[^"]*)"/);
+        if (m3u8Match) {
+            return {
+                url: m3u8Match[1],
+                headers: headers
+            };
+        }
+
+        const mp4Match = html.match(/"url\d{3,4}":"(https:[^"]+\.mp4[^"]*)"/);
+        if (mp4Match) {
+            const cleaned = mp4Match[1].replace(/\\\//g, "/");
+            return {
+                url: cleaned,
+                headers: headers
+            };
+        }
+
+        return null;
+    } catch (error) {
+        console.error("VK extractor error:", error);
+        return null;
+    }
+}
+
 async function mp4Extractor(url) {
     const headers = { "Referer": "https://mp4upload.com" };
     const response = await fetchv2(url, headers);
@@ -259,7 +269,7 @@ async function mp4Extractor(url) {
 
 function extractMp4Script(htmlText) {
     const scripts = extractScriptTags(htmlText);
-    let scriptContent = scripts.find(script => script.includes('player.src'));
+    const scriptContent = scripts.find(script => script.includes('player.src'));
     return scriptContent?.split(".src(")[1]?.split(")")[0]?.split("src:")[1]?.split('"')[1] || '';
 }
 
@@ -289,44 +299,6 @@ async function uqloadExtractor(embedUrl) {
         url: videoSrc,
         headers: headers
     };
-}
-
-async function vkExtractor(embedUrl) {
-    const headers = {
-        "Referer": "https://animerco.org",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
-    };
-
-    try {
-        const response = await fetchv2(embedUrl, headers);
-        const html = await response.text();
-
-        const streams = [];
-
-        const qualities = ["144", "240", "360", "480", "720", "1080", "1440", "2160"];
-
-        for (const q of qualities) {
-            const regex = new RegExp(`"url${q}":"(https:[^"]+\\.mp4[^"]*)"`);
-            const match = html.match(regex);
-            if (match && match[1]) {
-                streams.push({
-                    title: `${q}p`,
-                    streamUrl: match[1].replace(/\\\//g, "/"),
-                    headers: headers,
-                    subtitles: null
-                });
-            }
-        }
-
-        if (streams.length === 0) {
-            throw new Error("No MP4 streams found in VK page");
-        }
-
-        return streams;
-    } catch (error) {
-        console.error("VK extractor error:", error);
-        return null;
-    }
 }
 
 function decodeHTMLEntities(text) {
