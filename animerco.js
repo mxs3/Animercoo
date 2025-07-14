@@ -175,7 +175,7 @@ async function extractStreamUrl(url) {
                     }
 
                     if (streamData?.url) {
-                        // نحاول نحدد الجودة من الرابط (مثلاً 720p أو 1080p)
+                        // حاول نحدد الجودة من الاسم
                         const qualityMatch = streamData.url.match(/(\d{3,4})p/i);
                         const label = qualityMatch ? `${qualityMatch[1]}p` : "Unknown";
 
@@ -219,6 +219,8 @@ function _0x7E9A(_) {
             ____ === String.fromCharCode(...[115, 116, 114, 105, 110, 103]) && _____ === 16 && ________[String.fromCharCode(...[108, 101, 110, 103, 116, 104])] === 0))
         (_)
 }
+
+// Extractors
 
 async function mp4Extractor(url) {
     const headers = { "Referer": "https://mp4upload.com" };
@@ -264,23 +266,20 @@ async function uqloadExtractor(embedUrl) {
 
 async function vkExtractor(embedUrl) {
     const headers = {
-        "Referer": "https://vk.com",
+        "Referer": "https://vkvideo.ru",
         "User-Agent": "Mozilla/5.0"
     };
 
     const response = await fetchv2(embedUrl, headers);
     const html = await response.text();
 
-    const scripts = extractScriptTags(html);
-    for (const script of scripts) {
-        const match = script.match(/"url(?:720|1080|480|360|240)":"(https:[^"]+\.mp4)"/);
-        if (match) {
-            const url = match[1].replace(/\\\//g, "/");
-            return {
-                url,
-                headers
-            };
-        }
+    const mp4Match = html.match(/"url\d{3,4}":"(https:[^"]+\.mp4[^"]*)"/);
+    if (mp4Match) {
+        const cleaned = mp4Match[1].replace(/\\\//g, "/");
+        return {
+            url: cleaned,
+            headers
+        };
     }
 
     throw new Error("No MP4 stream found in VK");
