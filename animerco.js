@@ -133,11 +133,17 @@ async function extractEpisodes(url) {
     }
 }
 
-async function extractStreamUrl(url) {
+aasync function extractStreamUrl(url) {
     if (!_0xCheck()) return 'https://files.catbox.moe/avolvc.mp4';
 
     const multiStreams = { streams: [], subtitles: null };
     const serverWhitelist = ['mp4upload', 'uqload', 'streamwish', 'sfastwish', 'sibnet'];
+
+    // أسماء مخصصة للسيرفرات
+    const niceServerName = {
+        mp4upload: "1080",
+        uqload: "480"
+    };
 
     try {
         console.log("Page URL received:", url);
@@ -145,6 +151,7 @@ async function extractStreamUrl(url) {
         const html = await res.text();
         const method = 'POST';
 
+        // Regex لاستخراج السيرفرات
         const regex = /<a[^>]+data-type=['"]([^'"]+)['"][^>]+data-post=['"]([^'"]+)['"][^>]+data-nume=['"]([^'"]+)['"][^>]*>[\s\S]*?<span[^>]*class=['"]server['"]>\s*([^<]+)\s*<\/span>/gi;
 
         const matches = [...html.matchAll(regex)];
@@ -185,7 +192,7 @@ async function extractStreamUrl(url) {
 
                     if (streamData?.url) {
                         multiStreams.streams.push({
-                            title: server,
+                            title: niceServerName[server] || server, // ✅ عرض الاسم المخصص
                             streamUrl: streamData.url,
                             headers: streamData.headers,
                             subtitles: null
@@ -202,10 +209,11 @@ async function extractStreamUrl(url) {
             }
         }
 
+        // fallback في حالة مفيش أي سيرفر شغال
         if (multiStreams.streams.length === 0) {
             console.error("No valid streams were extracted, fallback triggered.");
             multiStreams.streams.push({
-                title: "Fallback 480p",
+                title: "480",
                 streamUrl: "https://files.catbox.moe/avolvc.mp4",
                 headers: {},
                 subtitles: null
@@ -219,7 +227,8 @@ async function extractStreamUrl(url) {
     }
 }
 
-// باقي الدوال كما هي (نفس اللي بعتهالك بدون تعديل):
+// دوال المساعدة:
+
 function _0xCheck() {
     var _0x1a = typeof _0xB4F2 === 'function';
     var _0x2b = typeof _0x7E9A === 'function';
