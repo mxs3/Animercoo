@@ -10,7 +10,7 @@
     "language": "Arabic (SUB)",
     "streamType": "MP4",
     "quality": "Auto",
-    "baseUrl": "https://mp4upload.com",
+    "baseUrl": "https://mp4upload.com/",
     "searchBaseUrl": "https://go.animerco.org/?s=%s",
     "scriptUrl": "https://raw.githubusercontent.com/mxs3/Animercoo/refs/heads/main/animerco.js",
     "type": "anime",
