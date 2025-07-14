@@ -143,8 +143,7 @@ async function extractStreamUrl(url) {
         const html = await res.text();
         const method = 'POST';
 
-        // ترتيب الأولوية الجديد
-        const servers = ['mp4upload', 'vkvideo', 'uqload'];
+        const servers = ['vkvideo', 'mp4upload', 'uqload']; // ترتيب الأولوية
 
         for (const server of servers) {
             const regex = new RegExp(
@@ -176,22 +175,22 @@ async function extractStreamUrl(url) {
 
                     let streamData;
 
-                    if (server === 'mp4upload') {
-                        streamData = await mp4Extractor(json.embed_url);
-                    } else if (server === 'vkvideo') {
+                    if (server === 'vkvideo') {
                         streamData = await vkExtractor(json.embed_url);
+                    } else if (server === 'mp4upload') {
+                        streamData = await mp4Extractor(json.embed_url);
                     } else if (server === 'uqload') {
                         streamData = await uqloadExtractor(json.embed_url);
                     }
 
-                    if (streamData?.url && streamData.url.endsWith(".mp4")) {
+                    if (streamData?.url) {
                         multiStreams.streams.push({
                             title: server.toUpperCase(),
                             streamUrl: streamData.url,
                             headers: streamData.headers,
                             subtitles: null
                         });
-                        break;
+                        break; // أول سيرفر شغال يكفي
                     }
                 } catch (err) {
                     console.error(`Extractor error for ${server}:`, err);
@@ -205,6 +204,27 @@ async function extractStreamUrl(url) {
     } catch (error) {
         console.error("extractStreamUrl Error:", error);
         return JSON.stringify({ streams: [], subtitles: null });
+    }
+}
+
+// ✅ Extractor: VK (HLS)
+async function vkExtractor(embedUrl) {
+    const headers = {
+        "Referer": "https://vk.com",
+        "User-Agent": "Mozilla/5.0"
+    };
+
+    try {
+        const response = await fetchv2(embedUrl, headers);
+        const html = await response.text();
+
+        const m3u8Match = html.match(/"hls":"([^"]+\.m3u8)"/);
+        const url = m3u8Match ? m3u8Match[1].replace(/\\/g, '') : null;
+
+        return url ? { url, headers } : null;
+    } catch (err) {
+        console.error("VK Extractor Error:", err);
+        return null;
     }
 }
 
@@ -224,28 +244,6 @@ function extractMp4Script(html) {
     const scriptRegex = /player\.src\(\{\s*type:\s*['"]video\/mp4['"],\s*src:\s*['"]([^'"]+)['"]\s*\}\)/;
     const match = html.match(scriptRegex);
     return match?.[1] || '';
-}
-
-// ✅ VK Extractor (يدعم فقط mp4 الآن)
-async function vkExtractor(embedUrl) {
-    const headers = {
-        "Referer": "https://vk.com",
-        "User-Agent": "Mozilla/5.0"
-    };
-
-    try {
-        const response = await fetchv2(embedUrl, headers);
-        const html = await response.text();
-
-        // محاولة إيجاد رابط mp4 فقط (وليس m3u8)
-        const mp4Match = html.match(/"url(\d+)":"([^"]+\\.mp4[^"]*)"/i);
-        const url = mp4Match ? mp4Match[2].replace(/\\/g, '') : null;
-
-        return url ? { url, headers } : null;
-    } catch (err) {
-        console.error("VK Extractor Error:", err);
-        return null;
-    }
 }
 
 // ✅ UQLoad Extractor
