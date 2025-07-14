@@ -261,23 +261,6 @@ async function uqloadExtractor(embedUrl) {
     };
 }
 
-// ✅ حماية السكربت
-function _0xCheck() {
-    return true;
-}
-
-function _0x7E9A(_) {
-    if (typeof _ !== 'string' || _.length !== 16) return false;
-
-    const check = 'cranci';
-    const chars = [..._.toLowerCase()];
-    for (const c of check) {
-        if (!chars.includes(c)) return false;
-    }
-
-    return true;
-}
-
 function decodeHTMLEntities(text) {
     text = text.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
     
