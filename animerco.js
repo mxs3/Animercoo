@@ -143,7 +143,7 @@ async function extractStreamUrl(url) {
         const html = await res.text();
         const method = 'POST';
 
-        const servers = ['vkvideo', 'mp4upload', 'uqload']; // ترتيب الأولوية
+        const servers = ['vkvideo', 'mp4upload', 'uqload'];
 
         for (const server of servers) {
             const regex = new RegExp(
@@ -207,7 +207,7 @@ async function extractStreamUrl(url) {
     }
 }
 
-// ✅ Extractor: VK (HLS)
+// ✅ VK Extractor: يدعم m3u8 أولًا ولو فشل يحاول mp4
 async function vkExtractor(embedUrl) {
     const headers = {
         "Referer": "https://vk.com",
@@ -218,10 +218,21 @@ async function vkExtractor(embedUrl) {
         const response = await fetchv2(embedUrl, headers);
         const html = await response.text();
 
+        // أولًا HLS
         const m3u8Match = html.match(/"hls":"([^"]+\.m3u8)"/);
-        const url = m3u8Match ? m3u8Match[1].replace(/\\/g, '') : null;
+        if (m3u8Match) {
+            const url = m3u8Match[1].replace(/\\/g, '');
+            return { url, headers };
+        }
 
-        return url ? { url, headers } : null;
+        // fallback لـ MP4
+        const mp4Match = html.match(/"url":"([^"]+\.mp4)"/);
+        if (mp4Match) {
+            const url = mp4Match[1].replace(/\\/g, '');
+            return { url, headers };
+        }
+
+        return null;
     } catch (err) {
         console.error("VK Extractor Error:", err);
         return null;
