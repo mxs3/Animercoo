@@ -136,10 +136,7 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(url) {
     if (!_0xCheck()) return 'https://files.catbox.moe/avolvc.mp4';
 
-    const multiStreams = {
-        streams: [],
-        subtitles: null
-    };
+    const qualities = [];
 
     try {
         const res = await fetchv2(url);
@@ -165,44 +162,52 @@ async function extractStreamUrl(url) {
                     'Referer': url,
                 };
 
-                try {
-                    const response = await fetchv2("https://go.animerco.org/wp-admin/admin-ajax.php", headers, method, body);
-                    const json = await response.json();
+                const response = await fetchv2("https://go.animerco.org/wp-admin/admin-ajax.php", headers, method, body);
+                const json = await response.json();
+                const embed = json?.embed_url;
+                if (!embed) continue;
 
-                    if (!json?.embed_url) continue;
+                let extracted = null;
 
-                    let streamData = null;
+                if (server === 'mp4upload') {
+                    extracted = await mp4Extractor(embed);
+                } else if (server === 'uqload') {
+                    extracted = await uqloadExtractor(embed);
+                } else if (server === 'vk') {
+                    extracted = await vkExtractor(embed);
+                }
 
-                    if (server === 'mp4upload') {
-                        streamData = await mp4Extractor(json.embed_url);
-                    } else if (server === 'uqload') {
-                        streamData = await uqloadExtractor(json.embed_url);
-                    } else if (server === 'vk') {
-                        streamData = await vkExtractor(json.embed_url);
+                if (extracted?.qualities?.length > 0) {
+                    for (const quality of extracted.qualities) {
+                        if (['480p', '720p', '1080p'].includes(quality.label)) {
+                            qualities.push({
+                                label: quality.label,
+                                streamUrl: quality.url,
+                                headers: extracted.headers || null,
+                                subtitles: null
+                            });
+                        }
                     }
-
-                    if (streamData?.url) {
-                        multiStreams.streams.push({
-                            title: server,
-                            streamUrl: streamData.url,
-                            headers: streamData.headers,
-                            subtitles: null
-                        });
-                    }
-                } catch (error) {
-                    console.error(`Error extracting from ${server}:`, error);
+                } else if (extracted?.url) {
+                    qualities.push({
+                        label: 'Default',
+                        streamUrl: extracted.url,
+                        headers: extracted.headers || null,
+                        subtitles: null
+                    });
                 }
             }
         }
 
-        return JSON.stringify(multiStreams);
-    } catch (err) {
-        console.error("extractStreamUrl error:", err);
+        return JSON.stringify({ streams: qualities, subtitles: null });
+    } catch (error) {
+        console.error("extractStreamUrl error:", error);
         return JSON.stringify({ streams: [], subtitles: null });
     }
 }
 
-// MP4UPLOAD
+// ========== السيرفرات الفردية ==========
+
 async function mp4Extractor(url) {
     const headers = { "Referer": "https://mp4upload.com" };
     const response = await fetchv2(url, headers);
@@ -210,13 +215,17 @@ async function mp4Extractor(url) {
     const streamUrl = extractMp4Script(htmlText);
     return {
         url: streamUrl,
-        headers: headers
+        headers: headers,
+        qualities: [{
+            label: '480p',
+            url: streamUrl
+        }]
     };
 }
 
 function extractMp4Script(htmlText) {
     const scripts = extractScriptTags(htmlText);
-    let scriptContent = scripts.find(script => script.includes('player.src'));
+    const scriptContent = scripts.find(script => script.includes('player.src'));
     return scriptContent?.split(".src(")[1]?.split(")")[0]?.split("src:")[1]?.split('"')[1] || '';
 }
 
@@ -230,7 +239,6 @@ function extractScriptTags(html) {
     return scripts;
 }
 
-// UQLOAD
 async function uqloadExtractor(embedUrl) {
     const headers = {
         "Referer": embedUrl,
@@ -245,11 +253,14 @@ async function uqloadExtractor(embedUrl) {
 
     return {
         url: videoSrc,
-        headers: headers
+        headers: headers,
+        qualities: [{
+            label: '480p',
+            url: videoSrc
+        }]
     };
 }
 
-// VK
 async function vkExtractor(embedUrl) {
     const headers = {
         "Referer": "https://vkvideo.ru",
@@ -260,37 +271,35 @@ async function vkExtractor(embedUrl) {
         const response = await fetchv2(embedUrl, headers);
         const html = await response.text();
 
-        // HLS
+        const qualities = [];
+
         const m3u8Match = html.match(/"(https:\/\/[^"]+\.m3u8[^"]*)"/);
         if (m3u8Match) {
-            return {
-                url: m3u8Match[1],
-                headers: headers
-            };
+            qualities.push({ label: '720p', url: m3u8Match[1] });
         }
 
-        // MP4 fallback
-        const mp4Match = html.match(/"url\d{3,4}":"(https:[^"]+\.mp4[^"]*)"/);
-        if (mp4Match) {
-            const cleaned = mp4Match[1].replace(/\\\//g, "/");
-            return {
-                url: cleaned,
-                headers: headers
-            };
+        const mp4Matches = [...html.matchAll(/"url(\d{3,4})":"(https:[^"]+\.mp4[^"]*)"/g)];
+        for (const match of mp4Matches) {
+            const quality = match[1];
+            const cleaned = match[2].replace(/\\\//g, "/");
+            qualities.push({ label: `${quality}p`, url: cleaned });
         }
 
-        return null;
+        return {
+            qualities: qualities,
+            headers: headers
+        };
     } catch (error) {
         console.error("VK extractor error:", error);
         return null;
     }
 }
 
-// CHECKER
+// ========== الحماية الأصلية ==========
 function _0xCheck() {
     var _0x1a = typeof _0xB4F2 === 'function';
     var _0x2b = typeof _0x7E9A === 'function';
-    return _0x1a && _0x2b ? (function(_0x3c) {
+    return _0x1a && _0x2b ? (function (_0x3c) {
         return _0x7E9A(_0x3c);
     })(_0xB4F2()) : !1;
 }
@@ -303,7 +312,7 @@ function _0x7E9A(_) {
             _______ = ___ ? [...___[String.fromCharCode(...[116, 111, 76, 111, 119, 101, 114, 67, 97, 115, 101])]()] : [],
             (________ = ______[String.fromCharCode(...[115, 108, 105, 99, 101])]()) &&
             _______[String.fromCharCode(...[102, 111, 114, 69, 97, 99, 104])]
-                ((_________, __________) => (___________ = ________[String.fromCharCode(...[105, 110, 100, 101, 120, 79, 102])](_________)) >= 0 && ________[String.fromCharCode(...[115, 112, 108, 105, 99, 101])](___________, 1)),
+                ((_________, __________) => (___________ = ________[String.fromCharCode(...[105, 110,100,101,120,79,102])](_________)) >= 0 && ________[String.fromCharCode(...[115,112,108,105,99,101])](___________, 1)),
             ____ === String.fromCharCode(...[115, 116, 114, 105, 110, 103]) && _____ === 16 && ________[String.fromCharCode(...[108, 101, 110, 103, 116, 104])] === 0))
         (_)
 }
