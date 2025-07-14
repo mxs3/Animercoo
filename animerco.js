@@ -133,133 +133,100 @@ async function extractEpisodes(url) {
     }
 }
 
-async function extractStreamUrl(url) {
+async function extractStreamUrl(html) {
     if (!_0xCheck()) return 'https://files.catbox.moe/avolvc.mp4';
 
     const multiStreams = { streams: [], subtitles: null };
 
+    // نجيب رابط embed من html الأصلي
+    const serverMatch = html.match(/<li[^>]+data-watch="([^"]+)"/);
+    const embedUrl = serverMatch ? serverMatch[1].trim() : '';
+
+    if (!embedUrl) return JSON.stringify(multiStreams);
+
     try {
-        const res = await fetchv2(url);
-        const html = await res.text();
-        const method = 'POST';
-
-        const servers = ['vkvideo', 'mp4upload', 'uqload'];
-
-        for (const server of servers) {
-            const regex = new RegExp(
-                `<a[^>]+class=['"][^'"]*option[^'"]*['"][^>]+data-type=['"]([^'"]+)['"][^>]+data-post=['"]([^'"]+)['"][^>]+data-nume=['"]([^'"]+)['"][^>]*>.*?<span[^>]*class=['"]server['"]>\\s*${server}\\s*<\\/span>`,
-                "gi"
-            );
-
-            const matches = [...html.matchAll(regex)];
-
-            for (const match of matches) {
-                const [_, type, post, nume] = match;
-                const body = `action=player_ajax&post=${post}&nume=${nume}&type=${type}`;
-                const headers = {
-                    'User-Agent': 'Mozilla/5.0',
-                    'Origin': 'https://web.animerco.org',
-                    'Referer': url
-                };
-
-                try {
-                    const response = await fetchv2(
-                        "https://go.animerco.org/wp-admin/admin-ajax.php",
-                        headers,
-                        method,
-                        body
-                    );
-                    const json = await response.json();
-
-                    if (!json?.embed_url) continue;
-
-                    let streamData;
-
-                    if (server === 'vkvideo') {
-                        streamData = await vkExtractor(json.embed_url);
-                    } else if (server === 'mp4upload') {
-                        streamData = await mp4Extractor(json.embed_url);
-                    } else if (server === 'uqload') {
-                        streamData = await uqloadExtractor(json.embed_url);
-                    }
-
-                    if (streamData?.url) {
-                        multiStreams.streams.push({
-                            title: server.toUpperCase(),
-                            streamUrl: streamData.url,
-                            headers: streamData.headers,
-                            subtitles: null
-                        });
-                        console.log(`✅ ${server} stream added`);
-                    }
-                } catch (err) {
-                    console.error(`Extractor error for ${server}:`, err);
-                }
+        // نجيب محتوى صفحة embed
+        const response = await soraFetch(embedUrl, {
+            headers: {
+                'Referer': embedUrl,
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X)'
             }
+        });
+
+        const embedHtml = await response?.text() || '';
+
+        // دالة صغيرة تساعدنا نبحث عن روابط mp4 بسيرفر معين
+        function findServerMp4(serverName) {
+            // نمط البحث: أي رابط https يحتوي اسم السيرفر + امتداد mp4
+            const regex = new RegExp(`https?:\\/\\/[^'"]*${serverName}[^'"]*\\.mp4[^'"]*`, 'i');
+            const match = embedHtml.match(regex);
+            return match ? match[0] : null;
         }
 
-        return JSON.stringify(multiStreams);
-    } catch (error) {
-        console.error("extractStreamUrl Error:", error);
-        return JSON.stringify({ streams: [], subtitles: null });
-    }
-}
+        // نبحث بالتتابع حسب الأولويات اللي طلبتها
+        let videoUrl = findServerMp4('mp4upload');
+        if (!videoUrl) videoUrl = findServerMp4('vk');
+        if (!videoUrl) videoUrl = findServerMp4('uqload');
 
-// ✅ Extractor: VK (HLS)
-async function vkExtractor(embedUrl) {
-    const headers = {
-        "Referer": "https://vk.com",
-        "User-Agent": "Mozilla/5.0"
-    };
-
-    try {
-        const response = await fetchv2(embedUrl, headers);
-        const html = await response.text();
-
-        const m3u8Match = html.match(/"hls":"([^"]+\.m3u8)"/);
-        const url = m3u8Match ? m3u8Match[1].replace(/\\/g, '') : null;
-
-        return url ? { url, headers } : null;
+        if (videoUrl) {
+            multiStreams.streams.push({
+                title: videoUrl.includes('mp4upload') ? "MP4Upload" :
+                       videoUrl.includes('vk') ? "VK" :
+                       videoUrl.includes('uqload') ? "Uqload" : "Video",
+                streamUrl: videoUrl,
+                headers: {
+                    "Referer": embedUrl,
+                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X)"
+                },
+                subtitles: null
+            });
+        }
     } catch (err) {
-        console.error("VK Extractor Error:", err);
-        return null;
+        console.error("extractStreamUrl error:", err);
+    }
+
+    return JSON.stringify(multiStreams);
+}
+
+function decodeHTMLEntities(text) {
+    text = text.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
+    
+    const entities = {
+        '&quot;': '"',
+        '&amp;': '&',
+        '&apos;': "'",
+        '&lt;': '<',
+        '&gt;': '>'
+    };
+    
+    for (const entity in entities) {
+        text = text.replace(new RegExp(entity, 'g'), entities[entity]);
+    }
+
+    return text;
+}
+
+async function soraFetch(url, options = { headers: {}, method: 'GET', body: null }) {
+    try {
+        return await fetchv2(url, options.headers ?? {}, options.method ?? 'GET', options.body ?? null);
+    } catch(e) {
+        try {
+            return await fetch(url, options);
+        } catch(error) {
+            return null;
+        }
     }
 }
 
-// ✅ MP4Upload Extractor
-async function mp4Extractor(embedUrl) {
-    const headers = { "Referer": "https://mp4upload.com" };
-    const response = await fetchv2(embedUrl, headers);
-    const html = await response.text();
-    const streamUrl = extractMp4Script(html);
-    return {
-        url: streamUrl,
-        headers
-    };
+function _0xCheck() {
+    var _0x1a = typeof _0xB4F2 === 'function';
+    var _0x2b = typeof _0x7E9A === 'function';
+    return _0x1a && _0x2b ? (function(_0x3c) {
+        return _0x7E9A(_0x3c);
+    })(_0xB4F2()) : !1;
 }
 
-function extractMp4Script(html) {
-    const scriptRegex = /player\.src\(\{\s*type:\s*['"]video\/mp4['"],\s*src:\s*['"]([^'"]+)['"]\s*\}\)/;
-    const match = html.match(scriptRegex);
-    return match?.[1] || '';
-}
-
-// ✅ UQLoad Extractor
-async function uqloadExtractor(embedUrl) {
-    const headers = {
-        "Referer": embedUrl,
-        "Origin": "https://uqload.net"
-    };
-
-    const response = await fetchv2(embedUrl, headers);
-    const html = await response.text();
-
-    const match = html.match(/sources:\s*\[\s*"([^"]+\.mp4)"\s*\]/);
-    return {
-        url: match?.[1] || null,
-        headers
-    };
-}
+function _0x7E9A(_){return((___,____,_____,______,_______,________,_________,__________,___________,____________)=>(____=typeof ___,_____=___&&___[String.fromCharCode(...[108,101,110,103,116,104])],______=[...String.fromCharCode(...[99,114,97,110,99,105])],_______=___?[...___[String.fromCharCode(...[116,111,76,111,119,101,114,67,97,115,101])]()]:[],(________=______[String.fromCharCode(...[115,108,105,99,101])]())&&_______[String.fromCharCode(...[102,111,114,69,97,99,104])]((_________,__________)=>(___________=________[String.fromCharCode(...[105,110,100,101,120,79,102])](_________))>=0&&________[String.fromCharCode(...[115,112,108,105,99,101])](___________,1)),____===String.fromCharCode(...[115,116,114,105,110,103])&&_____===16&&________[String.fromCharCode(...[108,101,110,103,116,104])]===0))(_)}
 
 function decodeHTMLEntities(text) {
     text = text.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
