@@ -112,27 +112,26 @@ async function extractStreamUrl(url) {
         const html = await res.text();
         const method = 'POST';
 
-        const servers = ['vk', 'mp4upload', 'uqload'];
+        // ✅ أولاً: محاولة استخراج رابط VK مباشرة
+        const vkMatch = html.match(/https:\/\/vkvideo\.mytrk\.link\/[^\s"']+/);
+        if (vkMatch) {
+            const vkUrl = vkMatch[0];
+            multiStreams.streams.push({
+                title: "VK",
+                streamUrl: vkUrl,
+                headers: {
+                    "Referer": url,
+                    "User-Agent": "Mozilla/5.0"
+                },
+                subtitles: null
+            });
+            console.log(`✅ VK stream found: ${vkUrl}`);
+        }
+
+        // ✅ باقي السيرفرات
+        const servers = ['mp4upload', 'uqload'];
 
         for (const server of servers) {
-            if (server === 'vk') {
-                const vkMatch = html.match(/https:\/\/vkvideo\.mytrk\.link\/[^\s'"]+/);
-                if (vkMatch) {
-                    const embedUrl = vkMatch[0];
-                    const streamData = await vkExtractor(embedUrl);
-                    if (streamData?.url) {
-                        multiStreams.streams.push({
-                            title: "VK",
-                            streamUrl: streamData.url,
-                            headers: streamData.headers,
-                            subtitles: null
-                        });
-                        break;
-                    }
-                }
-                continue;
-            }
-
             const regex = new RegExp(
                 `<a[^>]+class=['"][^'"]*option[^'"]*['"][^>]+data-type=['"]([^'"]+)['"][^>]+data-post=['"]([^'"]+)['"][^>]+data-nume=['"]([^'"]+)['"][^>]*>(?:(?!<span[^>]*class=['"]server['"]>).)*<span[^>]*class=['"]server['"]>\\s*${server}\\s*<\\/span>`,
                 "gi"
@@ -152,6 +151,7 @@ async function extractStreamUrl(url) {
                 try {
                     const response = await fetchv2("https://go.animerco.org/wp-admin/admin-ajax.php", headers, method, body);
                     const json = await response.json();
+
                     if (!json?.embed_url) continue;
 
                     let streamData;
@@ -171,6 +171,7 @@ async function extractStreamUrl(url) {
                         console.log(`✅ ${server} stream found: ${streamData.url}`);
                         break;
                     }
+
                 } catch (extractorError) {
                     console.error(`Extractor error for ${server}:`, extractorError);
                 }
@@ -183,32 +184,6 @@ async function extractStreamUrl(url) {
     } catch (error) {
         console.error("Error in extractStreamUrl:", error);
         return JSON.stringify({ streams: [], subtitles: null });
-    }
-}
-
-// ✅ VK Extractor (HLS)
-async function vkExtractor(embedUrl) {
-    try {
-        const headers = {
-            "Referer": embedUrl,
-            "User-Agent": "Mozilla/5.0"
-        };
-        const res = await fetchv2(embedUrl, headers);
-        const html = await res.text();
-
-        const m3u8Match = html.match(/["'](https:\/\/[^"']+\.m3u8[^"']*)["']/);
-        if (m3u8Match) {
-            return {
-                url: m3u8Match[1],
-                headers
-            };
-        }
-
-        console.warn("No VK HLS stream found.");
-        return null;
-    } catch (err) {
-        console.error("VK Extractor error:", err);
-        return null;
     }
 }
 
@@ -235,7 +210,7 @@ function extractScriptTags(html) {
     return [...html.matchAll(scriptRegex)].map(match => match[1]);
 }
 
-// ✅ UQLoad Extractor
+// ✅ Uqload Extractor
 async function uqloadExtractor(embedUrl) {
     const headers = {
         "Referer": embedUrl,
@@ -254,7 +229,7 @@ async function uqloadExtractor(embedUrl) {
     };
 }
 
-// ✅ حماية
+// ✅ حماية السكربت
 function _0xCheck() {
     var _0x1a = typeof _0xB4F2 === 'function';
     var _0x2b = typeof _0x7E9A === 'function';
