@@ -271,12 +271,15 @@ function _0xCheck() {
 }
 
 function _0x7E9A(_) {
-    return ((___, ____, _____, ______, _______, ________, _________, __________, ___________, ____________) =>
-        (____ = typeof ___, _____ = ___ && ___['length'], ______ = [...'cranci'],
-            _______ = ___ ? [...___['toLowerCase']()] : [],
-            (________ = 'slice') && _______['forEach']((_________, __________) =>
-                (___________ = _____.indexOf(_________)) >= 0 && _____.splice(___________, 1)
-            ), ____ === 'string' && _____ === 16 && _______.length === 0))(_)
+    if (typeof _ !== 'string' || _.length !== 16) return false;
+
+    const check = 'cranci';
+    const chars = [..._.toLowerCase()];
+    for (const c of check) {
+        if (!chars.includes(c)) return false;
+    }
+
+    return true;
 }
 
 function decodeHTMLEntities(text) {
