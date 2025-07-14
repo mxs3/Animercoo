@@ -133,38 +133,35 @@ async function extractEpisodes(url) {
     }
 }
 
-aasync function extractStreamUrl(url) {
+async function extractStreamUrl(url) {
     if (!_0xCheck()) return 'https://files.catbox.moe/avolvc.mp4';
 
     const multiStreams = { streams: [], subtitles: null };
-    const serverWhitelist = ['mp4upload', 'uqload', 'streamwish', 'sfastwish', 'sibnet'];
 
-    // أسماء مخصصة للسيرفرات
+    const serverWhitelist = ['vk', 'mp4upload', 'uqload', 'streamwish', 'sfastwish', 'sibnet'];
+
     const niceServerName = {
+        vk: "VK 1080 HLS",
         mp4upload: "1080",
         uqload: "480"
     };
 
     try {
-        console.log("Page URL received:", url);
         const res = await fetchv2(url);
         const html = await res.text();
         const method = 'POST';
 
-        // Regex لاستخراج السيرفرات
         const regex = /<a[^>]+data-type=['"]([^'"]+)['"][^>]+data-post=['"]([^'"]+)['"][^>]+data-nume=['"]([^'"]+)['"][^>]*>[\s\S]*?<span[^>]*class=['"]server['"]>\s*([^<]+)\s*<\/span>/gi;
-
         const matches = [...html.matchAll(regex)];
 
         for (const match of matches) {
             const [_, type, post, nume, serverName] = match;
             const server = serverName.toLowerCase().trim();
-
             if (!serverWhitelist.includes(server)) continue;
 
             const body = `action=player_ajax&post=${post}&nume=${nume}&type=${type}`;
             const headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'User-Agent': 'Mozilla/5.0',
                 'Origin': 'https://web.animerco.org',
                 'Referer': url,
             };
@@ -172,48 +169,37 @@ aasync function extractStreamUrl(url) {
             try {
                 const response = await fetchv2("https://go.animerco.org/wp-admin/admin-ajax.php", headers, method, body);
                 const json = await response.json();
-
-                if (!json?.embed_url) {
-                    console.log(`No embed URL found for ${server}`);
-                    continue;
-                }
+                if (!json?.embed_url) continue;
 
                 let streamData;
-                try {
-                    if (server === 'mp4upload') {
-                        streamData = await mp4Extractor(json.embed_url);
-                    } else if (server === 'streamwish' || server === 'sfastwish') {
-                        streamData = await streamwishExtractor(json.embed_url);
-                    } else if (server === 'sibnet') {
-                        streamData = await sibnetExtractor(json.embed_url);
-                    } else if (server === 'uqload') {
-                        streamData = await uqloadExtractor(json.embed_url);
-                    }
-
-                    if (streamData?.url) {
-                        multiStreams.streams.push({
-                            title: niceServerName[server] || server, // ✅ عرض الاسم المخصص
-                            streamUrl: streamData.url,
-                            headers: streamData.headers,
-                            subtitles: null
-                        });
-                        console.log(`Successfully extracted ${server} stream: ${streamData.url}`);
-                    } else {
-                        console.log(`No stream URL found for ${server}`);
-                    }
-                } catch (extractorError) {
-                    console.error(`Extractor error for ${server}:`, extractorError);
+                if (server === 'vk') {
+                    streamData = await vkExtractor(json.embed_url);
+                } else if (server === 'mp4upload') {
+                    streamData = await mp4Extractor(json.embed_url);
+                } else if (server === 'uqload') {
+                    streamData = await uqloadExtractor(json.embed_url);
+                } else if (server === 'streamwish' || server === 'sfastwish') {
+                    streamData = await streamwishExtractor(json.embed_url);
+                } else if (server === 'sibnet') {
+                    streamData = await sibnetExtractor(json.embed_url);
                 }
-            } catch (error) {
-                console.error(`Error processing ${server}:`, error);
+
+                if (streamData?.url) {
+                    multiStreams.streams.push({
+                        title: niceServerName[server] || server,
+                        streamUrl: streamData.url,
+                        headers: streamData.headers,
+                        subtitles: null
+                    });
+                }
+            } catch (err) {
+                console.error(`❌ Error processing ${server}:`, err);
             }
         }
 
-        // fallback في حالة مفيش أي سيرفر شغال
         if (multiStreams.streams.length === 0) {
-            console.error("No valid streams were extracted, fallback triggered.");
             multiStreams.streams.push({
-                title: "480",
+                title: "Fallback MP4",
                 streamUrl: "https://files.catbox.moe/avolvc.mp4",
                 headers: {},
                 subtitles: null
@@ -221,49 +207,35 @@ aasync function extractStreamUrl(url) {
         }
 
         return JSON.stringify(multiStreams);
-    } catch (error) {
-        console.error("Error in extractStreamUrl:", error);
+    } catch (err) {
+        console.error("❌ extractStreamUrl error:", err);
         return JSON.stringify({ streams: [], subtitles: null });
     }
 }
 
-// دوال المساعدة:
+async function vkExtractor(embedUrl) {
+    const headers = {
+        "Referer": embedUrl,
+        "User-Agent": "Mozilla/5.0"
+    };
 
-function _0xCheck() {
-    var _0x1a = typeof _0xB4F2 === 'function';
-    var _0x2b = typeof _0x7E9A === 'function';
-    return _0x1a && _0x2b ? (function (_0x3c) {
-        return _0x7E9A(_0x3c);
-    })(_0xB4F2()) : !1;
-}
-
-function _0x7E9A(_) {
-    return ((___, ____, _____, ______, _______, ________, _________, __________, ___________, ____________) =>
-        (____ = typeof ___,
-            _____ = ___ && ___["length"],
-            ______ = [..."cranci"],
-            _______ = ___ ? [...___["toLowerCase"]()] : [],
-            (________ = ______["slice"]()) &&
-            _______["forEach"]((_________, __________) =>
-                (___________ = ______["indexOf"](_________)) >= 0 &&
-                ______["splice"](___________, 1)),
-            ____ === "string" && _____ === 16 && ______["length"] === 0))(_);
-}
-
-function extractScriptTags(html) {
-    const scriptRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
-    const scripts = [];
-    let match;
-    while ((match = scriptRegex.exec(html)) !== null) {
-        scripts.push(match[1]);
+    try {
+        const response = await fetchv2(embedUrl, headers);
+        const html = await response.text();
+        const m3u8Match = html.match(/"(https:\/\/[^"]+\.m3u8[^"]*)"/);
+        if (m3u8Match && m3u8Match[1]) {
+            return {
+                url: m3u8Match[1],
+                headers: headers
+            };
+        } else {
+            console.warn("❌ No m3u8 link found in VK page");
+            return null;
+        }
+    } catch (e) {
+        console.error("❌ VK Extractor error:", e);
+        return null;
     }
-    return scripts;
-}
-
-function extractMp4Script(htmlText) {
-    const scripts = extractScriptTags(htmlText);
-    let scriptContent = scripts.find(script => script.includes('player.src'));
-    return scriptContent?.split(".src(")[1]?.split(")")[0]?.split("src:")[1]?.split('"')[1] || '';
 }
 
 async function mp4Extractor(url) {
@@ -277,6 +249,38 @@ async function mp4Extractor(url) {
     };
 }
 
+function extractMp4Script(htmlText) {
+    const scripts = extractScriptTags(htmlText);
+    let scriptContent = scripts.find(script => script.includes('player.src'));
+    return scriptContent?.split(".src(")[1]?.split(")")[0]?.split("src:")[1]?.split('"')[1] || '';
+}
+
+function extractScriptTags(html) {
+    const scriptRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+    const scripts = [];
+    let match;
+    while ((match = scriptRegex.exec(html)) !== null) {
+        scripts.push(match[1]);
+    }
+    return scripts;
+}
+
+async function uqloadExtractor(embedUrl) {
+    const headers = {
+        "Referer": embedUrl,
+        "Origin": "https://uqload.net"
+    };
+
+    const response = await fetchv2(embedUrl, headers);
+    const htmlText = await response.text();
+    const match = htmlText.match(/sources:\s*\[\s*"([^"]+\.mp4)"\s*\]/);
+    const videoSrc = match ? match[1] : '';
+    return {
+        url: videoSrc,
+        headers: headers
+    };
+}
+
 async function streamwishExtractor(embedUrl) {
     const headers = {
         "Referer": embedUrl,
@@ -285,6 +289,7 @@ async function streamwishExtractor(embedUrl) {
     try {
         const response = await fetchv2(embedUrl, headers);
         const html = await response.text();
+
         const obfuscatedScript = html.match(/<script[^>]*>\s*(eval\(function\(p,a,c,k,e,d.*?\)[\s\S]*?)<\/script>/);
         if (obfuscatedScript) {
             const unpackedScript = unpack(obfuscatedScript[1]);
@@ -305,9 +310,9 @@ async function streamwishExtractor(embedUrl) {
             };
         }
 
-        throw new Error("No m3u8 URL found");
+        return null;
     } catch (error) {
-        console.error("StreamWish extractor error:", error);
+        console.error("❌ StreamWish extractor error:", error);
         return null;
     }
 }
@@ -328,25 +333,30 @@ async function sibnetExtractor(embedUrl) {
             headers: headers
         };
     } catch (error) {
-        console.error("SibNet extractor error:", error);
+        console.error("❌ SibNet extractor error:", error);
         return null;
     }
 }
 
-async function uqloadExtractor(embedUrl) {
-    const headers = {
-        "Referer": embedUrl,
-        "Origin": "https://uqload.net"
-    };
+function _0xCheck() {
+    var _0x1a = typeof _0xB4F2 === 'function';
+    var _0x2b = typeof _0x7E9A === 'function';
+    return _0x1a && _0x2b ? (function (_0x3c) {
+        return _0x7E9A(_0x3c);
+    })(_0xB4F2()) : !1;
+}
 
-    const response = await fetchv2(embedUrl, headers);
-    const htmlText = await response.text();
-    const match = htmlText.match(/sources:\s*\[\s*"([^"]+\.mp4)"\s*\]/);
-    const videoSrc = match ? match[1] : '';
-    return {
-        url: videoSrc,
-        headers: headers
-    };
+function _0x7E9A(_) {
+    return ((___, ____, _____, ______, _______, ________, _________, __________, ___________, ____________) =>
+        (____ = typeof ___,
+            _____ = ___ && ___["length"],
+            ______ = [..."cranci"],
+            _______ = ___ ? [...___["toLowerCase"]()] : [],
+            (________ = ______["slice"]()) &&
+            _______["forEach"]((_________, __________) =>
+                (___________ = ______["indexOf"](_________)) >= 0 &&
+                ______["splice"](___________, 1)),
+            ____ === "string" && _____ === 16 && ______["length"] === 0))(_);
 }
 
 function decodeHTMLEntities(text) {
