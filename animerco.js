@@ -147,8 +147,8 @@ async function extractStreamUrl(url) {
         const html = await res.text();
         const method = 'POST';
 
-        const servers = ['mp4upload', 'uqload'];
-        
+        const servers = ['mp4upload', 'uqload', 'vk'];
+
         for (const server of servers) {
             const regex = new RegExp(
                 `<a[^>]+class=['"][^'"]*option[^'"]*['"][^>]+data-type=['"]([^'"]+)['"][^>]+data-post=['"]([^'"]+)['"][^>]+data-nume=['"]([^'"]+)['"][^>]*>(?:(?!<span[^>]*class=['"]server['"]>).)*<span[^>]*class=['"]server['"]>\\s*${server}\\s*<\\/span>`,
@@ -156,7 +156,7 @@ async function extractStreamUrl(url) {
             );
 
             const matches = [...html.matchAll(regex)];
-            
+
             for (const match of matches) {
                 const [_, type, post, nume] = match;
                 const body = `action=player_ajax&post=${post}&nume=${nume}&type=${type}`;
@@ -181,6 +181,8 @@ async function extractStreamUrl(url) {
                             streamData = await mp4Extractor(json.embed_url);
                         } else if (server === 'uqload') {
                             streamData = await uqloadExtractor(json.embed_url);
+                        } else if (server === 'vk') {
+                            streamData = await vkExtractor(json.embed_url);
                         }
 
                         if (streamData?.url) {
@@ -219,29 +221,22 @@ async function extractStreamUrl(url) {
 function _0xCheck() {
     var _0x1a = typeof _0xB4F2 === 'function';
     var _0x2b = typeof _0x7E9A === 'function';
-    return _0x1a && _0x2b ? (function(_0x3c) {
+    return _0x1a && _0x2b ? (function (_0x3c) {
         return _0x7E9A(_0x3c);
     })(_0xB4F2()) : !1;
 }
 
-function _0x7E9A(_){return((___,____,_____,______,_______,________,_________,__________,___________,____________)=>(____=typeof ___,_____=___&&___[String.fromCharCode(...[108,101,110,103,116,104])],______=[...String.fromCharCode(...[99,114,97,110,99,105])],_______=___?[...___[String.fromCharCode(...[116,111,76,111,119,101,114,67,97,115,101])]()]:[],(________=______[String.fromCharCode(...[115,108,105,99,101])]())&&_______[String.fromCharCode(...[102,111,114,69,97,99,104])]((_________,__________)=>(___________=________[String.fromCharCode(...[105,110,100,101,120,79,102])](_________))>=0&&________[String.fromCharCode(...[115,112,108,105,99,101])](___________,1)),____===String.fromCharCode(...[115,116,114,105,110,103])&&_____===16&&________[String.fromCharCode(...[108,101,110,103,116,104])]===0))(_)}
-
-async function uqloadExtractor(embedUrl) {
-    const headers = {
-        "Referer": embedUrl,
-        "Origin": "https://uqload.net"
-    };
-
-    const response = await fetchv2(embedUrl, headers);
-    const htmlText = await response.text();
-
-    const match = htmlText.match(/sources:\s*\[\s*"([^"]+\.mp4)"\s*\]/);
-    const videoSrc = match ? match[1] : '';
-
-    return {
-        url: videoSrc,
-        headers: headers
-    };
+function _0x7E9A(_) {
+    return ((___, ____, _____, ______, _______, ________, _________, __________, ___________, ____________) =>
+        (____ = typeof ___,
+            _____ = ___ && ___[String.fromCharCode(...[108, 101, 110, 103, 116, 104])],
+            ______ = [...String.fromCharCode(...[99, 114, 97, 110, 99, 105])],
+            _______ = ___ ? [...___[String.fromCharCode(...[116, 111, 76, 111, 119, 101, 114, 67, 97, 115, 101])]()] : [],
+            (________ = ______[String.fromCharCode(...[115, 108, 105, 99, 101])]()) &&
+            _______[String.fromCharCode(...[102, 111, 114, 69, 97, 99, 104])]
+                ((_________, __________) => (___________ = ________[String.fromCharCode(...[105, 110,100,101,120,79,102])](_________)) >= 0 && ________[String.fromCharCode(...[115,112,108,105,99,101])](___________, 1)),
+            ____ === String.fromCharCode(...[115, 116, 114, 105, 110, 103]) && _____ === 16 && ________[String.fromCharCode(...[108, 101, 110, 103, 116, 104])] === 0))
+        (_)
 }
 
 async function mp4Extractor(url) {
@@ -269,6 +264,58 @@ function extractScriptTags(html) {
         scripts.push(match[1]);
     }
     return scripts;
+}
+
+async function uqloadExtractor(embedUrl) {
+    const headers = {
+        "Referer": embedUrl,
+        "Origin": "https://uqload.net"
+    };
+
+    const response = await fetchv2(embedUrl, headers);
+    const htmlText = await response.text();
+
+    const match = htmlText.match(/sources:\s*\[\s*"([^"]+\.mp4)"\s*\]/);
+    const videoSrc = match ? match[1] : '';
+
+    return {
+        url: videoSrc,
+        headers: headers
+    };
+}
+
+async function vkExtractor(embedUrl) {
+    const headers = {
+        "Referer": embedUrl,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    };
+
+    try {
+        const response = await fetchv2(embedUrl, headers);
+        const html = await response.text();
+
+        const m3u8Match = html.match(/"(https:\/\/[^"]+\.m3u8[^"]*)"/);
+        if (m3u8Match) {
+            return {
+                url: m3u8Match[1],
+                headers: headers
+            };
+        }
+
+        const mp4Match = html.match(/"url\d{3,4}":"(https:[^"]+\.mp4[^"]*)"/);
+        if (mp4Match) {
+            const cleaned = mp4Match[1].replace(/\\\//g, "/");
+            return {
+                url: cleaned,
+                headers: headers
+            };
+        }
+
+        throw new Error("No stream link found in VK page");
+    } catch (error) {
+        console.error("VK extractor error:", error);
+        return null;
+    }
 }
 
 function decodeHTMLEntities(text) {
