@@ -175,9 +175,17 @@ async function extractStreamUrl(url) {
                     }
 
                     if (streamData?.url) {
-                        // حاول نحدد الجودة من الاسم
+                        // نحاول نجيب الجودة من الرابط
                         const qualityMatch = streamData.url.match(/(\d{3,4})p/i);
-                        const label = qualityMatch ? `${qualityMatch[1]}p` : "Unknown";
+                        let label = qualityMatch ? `${qualityMatch[1]}p` : null;
+
+                        // لو الجودة مش موجودة، نعطي اسم ثابت حسب السيرفر
+                        if (!label) {
+                            if (server === 'mp4upload') label = '1080';
+                            else if (server === 'uqload') label = '480';
+                            else if (server === 'vk') label = 'Default';
+                            else label = 'Unknown';
+                        }
 
                         qualitiesMap.push({
                             title: label,
@@ -215,7 +223,7 @@ function _0x7E9A(_) {
             _______ = ___ ? [...___[String.fromCharCode(...[116, 111, 76, 111, 119, 101, 114, 67, 97, 115, 101])]()] : [],
             (________ = ______[String.fromCharCode(...[115, 108, 105, 99, 101])]()) &&
             _______[String.fromCharCode(...[102, 111, 114, 69, 97, 99, 104])]
-                ((_________, __________) => (___________ = ________[String.fromCharCode(...[105, 110,100,101,120,79,102])](_________)) >= 0 && ________[String.fromCharCode(...[115,112,108,105,99,101])](___________, 1)),
+                ((_________, __________) => (___________ = ________[String.fromCharCode(...[105, 110, 100, 101, 120, 79, 102])](_________)) >= 0 && ________[String.fromCharCode(...[115, 112, 108, 105, 99, 101])](___________, 1)),
             ____ === String.fromCharCode(...[115, 116, 114, 105, 110, 103]) && _____ === 16 && ________[String.fromCharCode(...[108, 101, 110, 103, 116, 104])] === 0))
         (_)
 }
