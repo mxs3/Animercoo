@@ -134,18 +134,20 @@ async function extractEpisodes(url) {
 }
 
 async function extractStreamUrl(url) {
-    if (!_0xCheck()) return JSON.stringify({ streams: [], subtitles: null });
+    if (!_0xCheck()) return 'https://files.catbox.moe/avolvc.mp4';
 
     const multiStreams = { streams: [], subtitles: null };
+
     try {
         const res = await fetchv2(url);
         const html = await res.text();
+        const method = 'POST';
 
-        const servers = ['mp4upload', 'uqload', 'yourupload', 'sibnet'];
+        const servers = ['vkvideo', 'mp4upload', 'uqload']; // ترتيب الأولوية
 
         for (const server of servers) {
             const regex = new RegExp(
-                `<a[^>]+class=['"][^'"]*option[^'"]*['"][^>]+data-type=['"]([^'"]+)['"][^>]+data-post=['"]([^'"]+)['"][^>]+data-nume=['"]([^'"]+)['"][^>]*>(?:(?!<span[^>]*class=['"]server['"]>).)*<span[^>]*class=['"]server['"]>\\s*${server}\\s*<\\/span>`,
+                `<a[^>]+class=['"][^'"]*option[^'"]*['"][^>]+data-type=['"]([^'"]+)['"][^>]+data-post=['"]([^'"]+)['"][^>]+data-nume=['"]([^'"]+)['"][^>]*>.*?<span[^>]*class=['"]server['"]>\\s*${server}\\s*<\\/span>`,
                 "gi"
             );
 
@@ -157,41 +159,111 @@ async function extractStreamUrl(url) {
                 const headers = {
                     'User-Agent': 'Mozilla/5.0',
                     'Origin': 'https://web.animerco.org',
-                    'Referer': url,
+                    'Referer': url
                 };
 
                 try {
-                    const response = await fetchv2("https://go.animerco.org/wp-admin/admin-ajax.php", headers, 'POST', body);
+                    const response = await fetchv2(
+                        "https://go.animerco.org/wp-admin/admin-ajax.php",
+                        headers,
+                        method,
+                        body
+                    );
                     const json = await response.json();
+
                     if (!json?.embed_url) continue;
 
-                    const streamData = await genericMp4Extractor(json.embed_url, server);
-                    if (streamData?.url) {
-                        const qualityMatch = streamData.url.match(/(\\d{3,4})p/i);
-                        const label = qualityMatch ? `${qualityMatch[1]}p` : getDefaultLabelForServer(server);
+                    let streamData;
 
+                    if (server === 'vkvideo') {
+                        streamData = await vkExtractor(json.embed_url);
+                    } else if (server === 'mp4upload') {
+                        streamData = await mp4Extractor(json.embed_url);
+                    } else if (server === 'uqload') {
+                        streamData = await uqloadExtractor(json.embed_url);
+                    }
+
+                    if (streamData?.url) {
                         multiStreams.streams.push({
-                            title: label,
+                            title: server.toUpperCase(),
                             streamUrl: streamData.url,
                             headers: streamData.headers,
                             subtitles: null
                         });
+                        break; // أول سيرفر شغال يكفي
                     }
                 } catch (err) {
-                    console.error(`Error fetching from ${server}`, err);
+                    console.error(`Extractor error for ${server}:`, err);
                 }
             }
+
+            if (multiStreams.streams.length > 0) break;
         }
 
         return JSON.stringify(multiStreams);
     } catch (error) {
-        console.error("extractStreamUrl error:", error);
+        console.error("extractStreamUrl Error:", error);
         return JSON.stringify({ streams: [], subtitles: null });
     }
 }
 
-// ===================== UTILITIES =========================
+// ✅ Extractor: VK (HLS)
+async function vkExtractor(embedUrl) {
+    const headers = {
+        "Referer": "https://vk.com",
+        "User-Agent": "Mozilla/5.0"
+    };
 
+    try {
+        const response = await fetchv2(embedUrl, headers);
+        const html = await response.text();
+
+        const m3u8Match = html.match(/"hls":"([^"]+\.m3u8)"/);
+        const url = m3u8Match ? m3u8Match[1].replace(/\\/g, '') : null;
+
+        return url ? { url, headers } : null;
+    } catch (err) {
+        console.error("VK Extractor Error:", err);
+        return null;
+    }
+}
+
+// ✅ MP4Upload Extractor
+async function mp4Extractor(embedUrl) {
+    const headers = { "Referer": "https://mp4upload.com" };
+    const response = await fetchv2(embedUrl, headers);
+    const html = await response.text();
+    const streamUrl = extractMp4Script(html);
+    return {
+        url: streamUrl,
+        headers
+    };
+}
+
+function extractMp4Script(html) {
+    const scriptRegex = /player\.src\(\{\s*type:\s*['"]video\/mp4['"],\s*src:\s*['"]([^'"]+)['"]\s*\}\)/;
+    const match = html.match(scriptRegex);
+    return match?.[1] || '';
+}
+
+// ✅ UQLoad Extractor
+async function uqloadExtractor(embedUrl) {
+    const headers = {
+        "Referer": embedUrl,
+        "Origin": "https://uqload.net"
+    };
+
+    const response = await fetchv2(embedUrl, headers);
+    const html = await response.text();
+
+    const match = html.match(/sources:\s*\[\s*"([^"]+\.mp4)"\s*\]/);
+    return {
+        url: match?.[1] || null,
+        headers
+    };
+}
+
+// ✅ حماية السكربت
 function _0xCheck() {
     var _0x1a = typeof _0xB4F2 === 'function';
     var _0x2b = typeof _0x7E9A === 'function';
@@ -202,75 +274,11 @@ function _0xCheck() {
 
 function _0x7E9A(_) {
     return ((___, ____, _____, ______, _______, ________, _________, __________, ___________, ____________) =>
-        (____ = typeof ___,
-            _____ = ___ && ___["length"],
-            ______ = [..."cranci"],
-            _______ = ___ ? [...___["toLowerCase"]()] : [],
-            (________ = ______["slice"]()) &&
-            _______["forEach"]((_________, __________) => (___________ = ______["indexOf"](_________)) >= 0 && ______["splice"](___________, 1)),
-            ____ === "string" && _____ === 16 && ______["length"] === 0))
-        (_)
-}
-
-// ============== Extractor (Generic for MP4 servers) =============
-
-async function genericMp4Extractor(embedUrl, server) {
-    const headers = getHeadersForServer(server, embedUrl);
-    const res = await fetchv2(embedUrl, headers);
-    const html = await res.text();
-    const streamUrl = extractMp4Script(html);
-    return {
-        url: streamUrl,
-        headers
-    };
-}
-
-function getHeadersForServer(server, referer) {
-    switch (server) {
-        case 'mp4upload':
-            return { "Referer": "https://mp4upload.com" };
-        case 'yourupload':
-            return { "Referer": "https://www.yourupload.com/" };
-        case 'uqload':
-            return { "Referer": referer, "Origin": "https://uqload.net" };
-        case 'sibnet':
-            return { "Referer": "https://video.sibnet.ru" };
-        default:
-            return { "Referer": referer };
-    }
-}
-
-function getDefaultLabelForServer(server) {
-    switch (server) {
-        case 'mp4upload':
-            return '1080p';
-        case 'uqload':
-            return '480p';
-        case 'yourupload':
-            return '360p';
-        case 'sibnet':
-            return '720p';
-        default:
-            return 'Unknown';
-    }
-}
-
-// ============== Script Extractor ==============
-
-function extractMp4Script(htmlText) {
-    const scripts = extractScriptTags(htmlText);
-    let scriptContent = scripts.find(script => script.includes('player.src'));
-    return scriptContent?.split(".src(")[1]?.split(")")[0]?.split("src:")[1]?.split('"')[1] || '';
-}
-
-function extractScriptTags(html) {
-    const scriptRegex = /<script[^>]*>([\\s\\S]*?)<\\/script>/gi;
-    const scripts = [];
-    let match;
-    while ((match = scriptRegex.exec(html)) !== null) {
-        scripts.push(match[1]);
-    }
-    return scripts;
+        (____ = typeof ___, _____ = ___ && ___['length'], ______ = [...'cranci'],
+            _______ = ___ ? [...___['toLowerCase']()] : [],
+            (________ = 'slice') && _______['forEach']((_________, __________) =>
+                (___________ = _____.indexOf(_________)) >= 0 && _____.splice(___________, 1)
+            ), ____ === 'string' && _____ === 16 && _______.length === 0))(_)
 }
 
 function decodeHTMLEntities(text) {
