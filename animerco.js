@@ -147,7 +147,7 @@ async function extractStreamUrl(url) {
         const html = await res.text();
         const method = 'POST';
 
-        const servers = ['mp4upload', 'yourupload', 'streamwish', 'sfastwish', 'sibnet', 'uqload'];
+        const servers = ['mp4upload', 'uqload'];
         
         for (const server of servers) {
             const regex = new RegExp(
@@ -179,12 +179,6 @@ async function extractStreamUrl(url) {
                     try {
                         if (server === 'mp4upload') {
                             streamData = await mp4Extractor(json.embed_url);
-                        } else if (server === 'yourupload') {
-                            streamData = await youruploadExtractor(json.embed_url);
-                        } else if (server === 'streamwish' || server === 'sfastwish') {
-                            streamData = await streamwishExtractor(json.embed_url);
-                        } else if (server === 'sibnet') {
-                            streamData = await sibnetExtractor(json.embed_url);
                         } else if (server === 'uqload') {
                             streamData = await uqloadExtractor(json.embed_url);
                         }
@@ -246,82 +240,6 @@ async function uqloadExtractor(embedUrl) {
 
     return {
         url: videoSrc,
-        headers: headers
-    };
-}
-
-async function streamwishExtractor(embedUrl) {
-    const headers = { 
-        "Referer": embedUrl,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-    };
-    
-    try {
-        const response = await fetchv2(embedUrl, headers);
-        const html = await response.text();
-        
-        const obfuscatedScript = html.match(/<script[^>]*>\s*(eval\(function\(p,a,c,k,e,d.*?\)[\s\S]*?)<\/script>/);
-        if (obfuscatedScript) {
-            const unpackedScript = unpack(obfuscatedScript[1]);
-            const m3u8Match = unpackedScript.match(/file:"([^"]+\.m3u8)"/);
-            if (m3u8Match) {
-                return {
-                    url: m3u8Match[1],
-                    headers: headers
-                };
-            }
-        }
-        
-        const directMatch = html.match(/sources:\s*\[\{file:"([^"]+\.m3u8)"/);
-        if (directMatch) {
-            return {
-                url: directMatch[1],
-                headers: headers
-            };
-        }
-        
-        throw new Error("No m3u8 URL found");
-    } catch (error) {
-        console.error("StreamWish extractor error:", error);
-        return null;
-    }
-}
-
-async function sibnetExtractor(embedUrl) {
-    const headers = { 
-        "Referer": "https://video.sibnet.ru"
-    };
-    
-    try {
-        const response = await fetchv2(embedUrl, headers);
-        const html = await response.text();
-        
-        const vidMatch = html.match(/player.src\(\[\{src: \"([^\"]+)/);
-        if (!vidMatch || !vidMatch[1]) {
-            throw new Error("video link not found");
-        }
-        
-        const vidLink = `https://video.sibnet.ru${vidMatch[1]}`;
-        
-        console.log("[SibNet] Final video URL:", vidLink);
-
-        return {
-            url: vidLink,
-            headers: headers
-        };
-    } catch (error) {
-        console.error("SibNet extractor error:", error);
-        return null;
-    }
-}
-
-async function youruploadExtractor(embedUrl) {
-    const headers = { "Referer": "https://www.yourupload.com/" };
-    const response = await fetchv2(embedUrl, headers);
-    const html = await response.text();
-    const match = html.match(/file:\s*['"]([^'"]+\.mp4)['"]/);
-    return {
-        url: match?.[1] || null,
         headers: headers
     };
 }
