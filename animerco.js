@@ -179,22 +179,29 @@ async function extractStreamUrl(url) {
                     try {
                         if (server === 'mp4upload') {
                             streamData = await mp4Extractor(json.embed_url);
+                            if (streamData?.url) {
+                                multiStreams.streams.push({
+                                    title: 'mp4upload',
+                                    streamUrl: streamData.url,
+                                    headers: streamData.headers,
+                                    subtitles: null
+                                });
+                            }
                         } else if (server === 'uqload') {
                             streamData = await uqloadExtractor(json.embed_url);
+                            if (streamData?.url) {
+                                multiStreams.streams.push({
+                                    title: 'uqload',
+                                    streamUrl: streamData.url,
+                                    headers: streamData.headers,
+                                    subtitles: null
+                                });
+                            }
                         } else if (server === 'vk') {
-                            streamData = await vkExtractor(json.embed_url);
-                        }
-
-                        if (streamData?.url) {
-                            multiStreams.streams.push({
-                                title: server,
-                                streamUrl: streamData.url,
-                                headers: streamData.headers,
-                                subtitles: null
-                            });
-                            console.log(`Successfully extracted ${server} stream: ${streamData.url}`);
-                        } else {
-                            console.log(`No stream URL found for ${server}`);
+                            const vkStreams = await vkExtractor(json.embed_url);
+                            if (Array.isArray(vkStreams)) {
+                                multiStreams.streams.push(...vkStreams);
+                            }
                         }
                     } catch (extractorError) {
                         console.error(`Extractor error for ${server}:`, extractorError);
@@ -286,32 +293,36 @@ async function uqloadExtractor(embedUrl) {
 
 async function vkExtractor(embedUrl) {
     const headers = {
-        "Referer": embedUrl,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+        "Referer": "https://animerco.org",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
     };
 
     try {
         const response = await fetchv2(embedUrl, headers);
         const html = await response.text();
 
-        const m3u8Match = html.match(/"(https:\/\/[^"]+\.m3u8[^"]*)"/);
-        if (m3u8Match) {
-            return {
-                url: m3u8Match[1],
-                headers: headers
-            };
+        const streams = [];
+
+        const qualities = ["144", "240", "360", "480", "720", "1080", "1440", "2160"];
+
+        for (const q of qualities) {
+            const regex = new RegExp(`"url${q}":"(https:[^"]+\\.mp4[^"]*)"`);
+            const match = html.match(regex);
+            if (match && match[1]) {
+                streams.push({
+                    title: `${q}p`,
+                    streamUrl: match[1].replace(/\\\//g, "/"),
+                    headers: headers,
+                    subtitles: null
+                });
+            }
         }
 
-        const mp4Match = html.match(/"url\d{3,4}":"(https:[^"]+\.mp4[^"]*)"/);
-        if (mp4Match) {
-            const cleaned = mp4Match[1].replace(/\\\//g, "/");
-            return {
-                url: cleaned,
-                headers: headers
-            };
+        if (streams.length === 0) {
+            throw new Error("No MP4 streams found in VK page");
         }
 
-        throw new Error("No stream link found in VK page");
+        return streams;
     } catch (error) {
         console.error("VK extractor error:", error);
         return null;
