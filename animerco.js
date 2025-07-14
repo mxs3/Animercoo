@@ -112,7 +112,24 @@ async function extractStreamUrl(url) {
         const html = await res.text();
         const method = 'POST';
 
-        const servers = ['streamwish', 'mp4upload', 'uqload'];
+        // ✅ أولاً: محاولة استخراج رابط VK مباشرة
+        const vkMatch = html.match(/https:\/\/vkvideo\.mytrk\.link\/[^\s"']+/);
+        if (vkMatch) {
+            const vkUrl = vkMatch[0];
+            multiStreams.streams.push({
+                title: "VK",
+                streamUrl: vkUrl,
+                headers: {
+                    "Referer": url,
+                    "User-Agent": "Mozilla/5.0"
+                },
+                subtitles: null
+            });
+            console.log(`✅ VK stream found: ${vkUrl}`);
+        }
+
+        // ✅ باقي السيرفرات
+        const servers = ['mp4upload', 'uqload'];
 
         for (const server of servers) {
             const regex = new RegExp(
@@ -138,11 +155,8 @@ async function extractStreamUrl(url) {
                     if (!json?.embed_url) continue;
 
                     let streamData;
-
                     if (server === 'mp4upload') {
                         streamData = await mp4Extractor(json.embed_url);
-                    } else if (server === 'streamwish') {
-                        streamData = await streamwishExtractor(json.embed_url);
                     } else if (server === 'uqload') {
                         streamData = await uqloadExtractor(json.embed_url);
                     }
@@ -155,7 +169,7 @@ async function extractStreamUrl(url) {
                             subtitles: null
                         });
                         console.log(`✅ ${server} stream found: ${streamData.url}`);
-                        break; // أول سيرفر ناجح يكفي
+                        break;
                     }
 
                 } catch (extractorError) {
@@ -170,30 +184,6 @@ async function extractStreamUrl(url) {
     } catch (error) {
         console.error("Error in extractStreamUrl:", error);
         return JSON.stringify({ streams: [], subtitles: null });
-    }
-}
-
-// ✅ StreamWish Extractor (HLS)
-async function streamwishExtractor(embedUrl) {
-    const headers = {
-        "Referer": embedUrl,
-        "User-Agent": "Mozilla/5.0"
-    };
-
-    try {
-        const response = await fetchv2(embedUrl, headers);
-        const html = await response.text();
-
-        const packed = html.match(/eval\(function\(p,a,c,k,e,d.*?\)[\s\S]*?<\/script>/);
-        const unpackedScript = packed ? unpack(packed[0]) : '';
-
-        const m3u8Match = unpackedScript.match(/file:"([^"]+\.m3u8)"/)
-            || html.match(/sources:\s*\[\{file:"([^"]+\.m3u8)"/);
-
-        return m3u8Match ? { url: m3u8Match[1], headers } : null;
-    } catch (err) {
-        console.error("Streamwish extractor error:", err);
-        return null;
     }
 }
 
@@ -220,7 +210,7 @@ function extractScriptTags(html) {
     return [...html.matchAll(scriptRegex)].map(match => match[1]);
 }
 
-// ✅ Uqload Extractor (MP4)
+// ✅ Uqload Extractor
 async function uqloadExtractor(embedUrl) {
     const headers = {
         "Referer": embedUrl,
