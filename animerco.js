@@ -190,14 +190,12 @@ async function extractStreamUrl(url) {
                             headers: streamData.headers,
                             subtitles: null
                         });
-                        break; // أول سيرفر شغال يكفي
+                        console.log(`✅ ${server} stream added`);
                     }
                 } catch (err) {
                     console.error(`Extractor error for ${server}:`, err);
                 }
             }
-
-            if (multiStreams.streams.length > 0) break;
         }
 
         return JSON.stringify(multiStreams);
@@ -207,7 +205,7 @@ async function extractStreamUrl(url) {
     }
 }
 
-// ✅ VK Extractor: يدعم m3u8 أولًا ولو فشل يحاول mp4
+// ✅ Extractor: VK (HLS)
 async function vkExtractor(embedUrl) {
     const headers = {
         "Referer": "https://vk.com",
@@ -218,21 +216,10 @@ async function vkExtractor(embedUrl) {
         const response = await fetchv2(embedUrl, headers);
         const html = await response.text();
 
-        // أولًا HLS
         const m3u8Match = html.match(/"hls":"([^"]+\.m3u8)"/);
-        if (m3u8Match) {
-            const url = m3u8Match[1].replace(/\\/g, '');
-            return { url, headers };
-        }
+        const url = m3u8Match ? m3u8Match[1].replace(/\\/g, '') : null;
 
-        // fallback لـ MP4
-        const mp4Match = html.match(/"url":"([^"]+\.mp4)"/);
-        if (mp4Match) {
-            const url = mp4Match[1].replace(/\\/g, '');
-            return { url, headers };
-        }
-
-        return null;
+        return url ? { url, headers } : null;
     } catch (err) {
         console.error("VK Extractor Error:", err);
         return null;
