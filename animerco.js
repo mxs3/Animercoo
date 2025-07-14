@@ -146,7 +146,7 @@ async function extractStreamUrl(url) {
         const html = await res.text();
         const method = 'POST';
 
-        const servers = ['vk', 'mp4upload', 'uqload'];
+        const servers = ['mp4upload', 'uqload', 'vk'];
 
         for (const server of servers) {
             const regex = new RegExp(
@@ -171,13 +171,14 @@ async function extractStreamUrl(url) {
 
                     if (!json?.embed_url) continue;
 
-                    let streamData;
-                    if (server === 'vk') {
-                        streamData = await vkExtractor(json.embed_url);
-                    } else if (server === 'mp4upload') {
+                    let streamData = null;
+
+                    if (server === 'mp4upload') {
                         streamData = await mp4Extractor(json.embed_url);
                     } else if (server === 'uqload') {
                         streamData = await uqloadExtractor(json.embed_url);
+                    } else if (server === 'vk') {
+                        streamData = await vkExtractor(json.embed_url);
                     }
 
                     if (streamData?.url) {
@@ -188,74 +189,20 @@ async function extractStreamUrl(url) {
                             subtitles: null
                         });
                     }
-                } catch (e) {
-                    console.error(`Error extracting ${server}:`, e);
+                } catch (error) {
+                    console.error(`Error extracting from ${server}:`, error);
                 }
             }
         }
 
         return JSON.stringify(multiStreams);
-    } catch (e) {
-        console.error("extractStreamUrl error:", e);
+    } catch (err) {
+        console.error("extractStreamUrl error:", err);
         return JSON.stringify({ streams: [], subtitles: null });
     }
 }
 
-function _0xCheck() {
-    var _0x1a = typeof _0xB4F2 === 'function';
-    var _0x2b = typeof _0x7E9A === 'function';
-    return _0x1a && _0x2b ? (function (_0x3c) {
-        return _0x7E9A(_0x3c);
-    })(_0xB4F2()) : !1;
-}
-
-function _0x7E9A(_) {
-    return ((___, ____, _____, ______, _______, ________, _________, __________, ___________, ____________) =>
-        (____ = typeof ___,
-            _____ = ___ && ___[String.fromCharCode(...[108, 101, 110, 103, 116, 104])],
-            ______ = [...String.fromCharCode(...[99, 114, 97, 110, 99, 105])],
-            _______ = ___ ? [...___[String.fromCharCode(...[116, 111, 76, 111, 119, 101, 114, 67, 97, 115, 101])]()] : [],
-            (________ = ______[String.fromCharCode(...[115, 108, 105, 99, 101])]()) &&
-            _______[String.fromCharCode(...[102, 111, 114, 69, 97, 99, 104])]
-                ((_________, __________) => (___________ = ________[String.fromCharCode(...[105, 110,100,101,120,79,102])](_________)) >= 0 && ________[String.fromCharCode(...[115,112,108,105,99,101])](___________, 1)),
-            ____ === String.fromCharCode(...[115, 116, 114, 105, 110, 103]) && _____ === 16 && ________[String.fromCharCode(...[108, 101, 110, 103, 116, 104])] === 0))
-        (_)
-}
-
-async function vkExtractor(embedUrl) {
-    const headers = {
-        "Referer": "https://vk.com",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
-    };
-
-    try {
-        const response = await fetchv2(embedUrl, headers);
-        const html = await response.text();
-
-        const m3u8Match = html.match(/"(https:\/\/[^"]+\.m3u8[^"]*)"/);
-        if (m3u8Match) {
-            return {
-                url: m3u8Match[1],
-                headers: headers
-            };
-        }
-
-        const mp4Match = html.match(/"url\d{3,4}":"(https:[^"]+\.mp4[^"]*)"/);
-        if (mp4Match) {
-            const cleaned = mp4Match[1].replace(/\\\//g, "/");
-            return {
-                url: cleaned,
-                headers: headers
-            };
-        }
-
-        return null;
-    } catch (error) {
-        console.error("VK extractor error:", error);
-        return null;
-    }
-}
-
+// MP4UPLOAD
 async function mp4Extractor(url) {
     const headers = { "Referer": "https://mp4upload.com" };
     const response = await fetchv2(url, headers);
@@ -269,7 +216,7 @@ async function mp4Extractor(url) {
 
 function extractMp4Script(htmlText) {
     const scripts = extractScriptTags(htmlText);
-    const scriptContent = scripts.find(script => script.includes('player.src'));
+    let scriptContent = scripts.find(script => script.includes('player.src'));
     return scriptContent?.split(".src(")[1]?.split(")")[0]?.split("src:")[1]?.split('"')[1] || '';
 }
 
@@ -283,6 +230,7 @@ function extractScriptTags(html) {
     return scripts;
 }
 
+// UQLOAD
 async function uqloadExtractor(embedUrl) {
     const headers = {
         "Referer": embedUrl,
@@ -299,6 +247,65 @@ async function uqloadExtractor(embedUrl) {
         url: videoSrc,
         headers: headers
     };
+}
+
+// VK
+async function vkExtractor(embedUrl) {
+    const headers = {
+        "Referer": "https://vkvideo.ru",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
+    };
+
+    try {
+        const response = await fetchv2(embedUrl, headers);
+        const html = await response.text();
+
+        // HLS
+        const m3u8Match = html.match(/"(https:\/\/[^"]+\.m3u8[^"]*)"/);
+        if (m3u8Match) {
+            return {
+                url: m3u8Match[1],
+                headers: headers
+            };
+        }
+
+        // MP4 fallback
+        const mp4Match = html.match(/"url\d{3,4}":"(https:[^"]+\.mp4[^"]*)"/);
+        if (mp4Match) {
+            const cleaned = mp4Match[1].replace(/\\\//g, "/");
+            return {
+                url: cleaned,
+                headers: headers
+            };
+        }
+
+        return null;
+    } catch (error) {
+        console.error("VK extractor error:", error);
+        return null;
+    }
+}
+
+// CHECKER
+function _0xCheck() {
+    var _0x1a = typeof _0xB4F2 === 'function';
+    var _0x2b = typeof _0x7E9A === 'function';
+    return _0x1a && _0x2b ? (function(_0x3c) {
+        return _0x7E9A(_0x3c);
+    })(_0xB4F2()) : !1;
+}
+
+function _0x7E9A(_) {
+    return ((___, ____, _____, ______, _______, ________, _________, __________, ___________, ____________) =>
+        (____ = typeof ___,
+            _____ = ___ && ___[String.fromCharCode(...[108, 101, 110, 103, 116, 104])],
+            ______ = [...String.fromCharCode(...[99, 114, 97, 110, 99, 105])],
+            _______ = ___ ? [...___[String.fromCharCode(...[116, 111, 76, 111, 119, 101, 114, 67, 97, 115, 101])]()] : [],
+            (________ = ______[String.fromCharCode(...[115, 108, 105, 99, 101])]()) &&
+            _______[String.fromCharCode(...[102, 111, 114, 69, 97, 99, 104])]
+                ((_________, __________) => (___________ = ________[String.fromCharCode(...[105, 110, 100, 101, 120, 79, 102])](_________)) >= 0 && ________[String.fromCharCode(...[115, 112, 108, 105, 99, 101])](___________, 1)),
+            ____ === String.fromCharCode(...[115, 116, 114, 105, 110, 103]) && _____ === 16 && ________[String.fromCharCode(...[108, 101, 110, 103, 116, 104])] === 0))
+        (_)
 }
 
 function decodeHTMLEntities(text) {
