@@ -9,7 +9,7 @@
     "version": "9.9.9",
     "language": "Arabic (SUB)",
     "streamType": "MP4",
-    "quality": "720",
+    "quality": "Auto",
     "baseUrl": "https://mp4upload.com/",
     "searchBaseUrl": "https://go.animerco.org/?s=%s",
     "scriptUrl": "https://raw.githubusercontent.com/mxs3/Animercoo/refs/heads/main/animerco.js",
